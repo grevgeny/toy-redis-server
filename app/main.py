@@ -2,14 +2,21 @@
 import socket
 
 
-def main():
-    # You can use print statements as follows for debugging, they'll be visible when running tests.
-    print("Logs from your program will appear here!")
-
-    # Uncomment this to pass the first stage
-    #
+def main() -> None:
+    # Create a TCP server socket that listens on the localhost address and port 6379
     server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
-    server_socket.accept()  # wait for clientpy
+    # Accept a connection from a client
+    conn, addr = server_socket.accept()
+    with conn:
+        print(f"Connected by {addr}")
+
+        # Receive data from the client
+        data = conn.recv(1024)
+        print(f"Received {data}")
+
+        # Send data back to the client
+        pong_response = "+PONG\r\n"
+        conn.send(pong_response.encode())
 
 
 if __name__ == "__main__":
