@@ -5,6 +5,10 @@ import threading
 DATABASE = {}
 
 
+def expire_key(key: str) -> None:
+    DATABASE.pop(key, None)
+
+
 def extract_command(data: bytes) -> list[str]:
     decoded_data: str = data.decode()
     command = [arg for arg in decoded_data.split("\r\n")[:-1] if arg[0] not in "*$"]
@@ -12,8 +16,9 @@ def extract_command(data: bytes) -> list[str]:
 
 
 def handle_connection(conn: socket.socket) -> None:
-    PONG = "+PONG\r\n".encode()
-    OK = "+OK\r\n".encode()
+    PONG = b"+PONG\r\n"
+    OK = b"+OK\r\n"
+    NULL = b"$-1\r\n"
 
     # Receive data from the client
     while data := conn.recv(1024):
@@ -35,8 +40,14 @@ def handle_connection(conn: socket.socket) -> None:
                 DATABASE[key] = value
                 response = OK
                 print(f"Set key {key} to value {value}")
+            case ["set", key, value, _, time]:
+                DATABASE[key] = value
+                threading.Timer(int(time) / 1000, expire_key, args=(key,)).start()
+                response = OK
+                print(f"Set key {key} to value {value} with expire time {time}")
             case ["get", key]:
-                response = f"+{DATABASE.get(key, '')}\r\n".encode()
+                value = DATABASE.get(key, None)
+                response = f"+{value}\r\n".encode() if value else NULL
             case _:
                 print("Unknown Command:", command)
                 response = f"-ERR unknown command '{command[0]}'\r\n".encode()
