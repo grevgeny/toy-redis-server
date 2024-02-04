@@ -10,13 +10,17 @@ def main() -> None:
     with conn:
         print(f"Connected by {addr}")
 
-        # Receive data from the client
-        data = conn.recv(1024)
-        print(f"Received {data}")
+        while True:
+            # Receive data from the client
+            data = conn.recv(1024)
+            print(f"Received {data}")
 
-        # Send data back to the client
-        pong_response = "+PONG\r\n"
-        conn.send(pong_response.encode())
+            if not data:
+                break
+
+            # Send data back to the client
+            pong_response = "+PONG\r\n"
+            conn.send(pong_response.encode())
 
 
 if __name__ == "__main__":
