@@ -2,18 +2,18 @@
 import socket
 import threading
 
+DATABASE = {}
 
-def parse_data(data: bytes) -> list[str]:
+
+def extract_command(data: bytes) -> list[str]:
     decoded_data: str = data.decode()
-
-    # Extract command
     command = [arg for arg in decoded_data.split("\r\n")[:-1] if arg[0] not in "*$"]
-
     return command
 
 
 def handle_connection(conn: socket.socket) -> None:
     PONG = "+PONG\r\n".encode()
+    OK = "+OK\r\n".encode()
 
     # Receive data from the client
     while data := conn.recv(1024):
@@ -22,8 +22,8 @@ def handle_connection(conn: socket.socket) -> None:
         if not data:
             continue
 
-        # Parse the data
-        command = parse_data(data)
+        # Parse the data and extract command
+        command = extract_command(data)
 
         # Respond based on command recieved
         match command:
@@ -31,6 +31,12 @@ def handle_connection(conn: socket.socket) -> None:
                 response = PONG
             case ["echo", data]:
                 response = f"+{data}\r\n".encode()
+            case ["set", key, value]:
+                DATABASE[key] = value
+                response = OK
+                print(f"Set key {key} to value {value}")
+            case ["get", key]:
+                response = f"+{DATABASE.get(key, '')}\r\n".encode()
             case _:
                 print("Unknown Command:", command)
                 response = f"-ERR unknown command '{command[0]}'\r\n".encode()
