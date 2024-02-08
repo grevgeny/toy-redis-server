@@ -1,34 +1,37 @@
-# Uncomment this to pass the first stage
-import socket
-import threading
+import asyncio
+import datetime
+from typing import Any
 
-DATABASE = {}
+HOST, PORT = "", 6379
+
+PONG = b"+PONG\r\n"
+OK = b"+OK\r\n"
+NULL = b"$-1\r\n"
+
+DATABASE: dict[str, tuple[Any, datetime.datetime | None]] = {}
 
 
-def expire_key(key: str) -> None:
-    DATABASE.pop(key, None)
-
-
-def extract_command(data: bytes) -> list[str]:
+async def extract_command(data: bytes) -> list[str]:
     decoded_data: str = data.decode()
     command = [arg for arg in decoded_data.split("\r\n")[:-1] if arg[0] not in "*$"]
     return command
 
 
-def handle_connection(conn: socket.socket) -> None:
-    PONG = b"+PONG\r\n"
-    OK = b"+OK\r\n"
-    NULL = b"$-1\r\n"
-
-    # Receive data from the client
-    while data := conn.recv(1024):
-        print(f"Received {data}")
-
+async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    addr = writer.get_extra_info("peername")
+    print("Connected by", addr)
+    while True:
+        # Receive
+        try:
+            data = await reader.read(1024)
+        except ConnectionError:
+            print(f"Client suddenly closed while receiving from {addr}")
+            break
         if not data:
-            continue
+            break
 
         # Parse the data and extract command
-        command = extract_command(data)
+        command = await extract_command(data)
 
         # Respond based on command recieved
         match command:
@@ -37,38 +40,38 @@ def handle_connection(conn: socket.socket) -> None:
             case ["echo", data]:
                 response = f"+{data}\r\n".encode()
             case ["set", key, value]:
-                DATABASE[key] = value
+                DATABASE[key] = (value, None)
                 response = OK
-                print(f"Set key {key} to value {value}")
             case ["set", key, value, _, time]:
-                DATABASE[key] = value
-                threading.Timer(int(time) / 1000, expire_key, args=(key,)).start()
+                expiry = datetime.datetime.now(datetime.UTC) + datetime.timedelta(
+                    milliseconds=int(time)
+                )
+                DATABASE[key] = (value, expiry)
                 response = OK
-                print(f"Set key {key} to value {value} with expire time {time}")
             case ["get", key]:
-                value = DATABASE.get(key, None)
-                response = f"+{value}\r\n".encode() if value else NULL
+                value, expiry = DATABASE.get(key, (None, None))
+                if expiry and expiry < datetime.datetime.now(datetime.UTC):
+                    await expire_key(key)
+                    response = NULL
+                else:
+                    response = f"+{value}\r\n".encode() if value else NULL
             case _:
-                print("Unknown Command:", command)
                 response = f"-ERR unknown command '{command[0]}'\r\n".encode()
 
-        conn.sendall(response)
+        try:
+            writer.write(response)
+        except ConnectionError:
+            print("Client suddenly closed, cannot send")
+            break
+    writer.close()
+    print("Disconnected by", addr)
 
 
-def main() -> None:
-    # Create a TCP server socket that listens on the localhost address and port 6379
-    server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
-
-    # Start listening for incoming connections
-    while True:
-        # Accept a connection from a client
-        conn, addr = server_socket.accept()
-        print(f"Connected by {addr}")
-
-        # Handle the connection in a new thread
-        thread = threading.Thread(target=handle_connection, args=(conn,))
-        thread.start()
+async def main(host, port):
+    server = await asyncio.start_server(handle_connection, host, port)
+    async with server:
+        await server.serve_forever()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main(HOST, PORT))
