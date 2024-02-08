@@ -51,7 +51,7 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
             case ["get", key]:
                 value, expiry = DATABASE.get(key, (None, None))
                 if expiry and expiry < datetime.datetime.now(datetime.UTC):
-                    await expire_key(key)
+                    DATABASE.pop(key)
                     response = NULL
                 else:
                     response = f"+{value}\r\n".encode() if value else NULL
