@@ -6,6 +6,14 @@ class CommandHandler:
     def __init__(self, database: RedisDatabase, config: RedisConfig) -> None:
         self.database = database
         self.config = config
+        self.command_registry = {
+            "ping": self.ping,
+            "echo": self.echo,
+            "set": self.set,
+            "get": self.get,
+            "del": self.delete,
+            "config": self.config_get,
+        }
 
     async def handle_command(self, command: list[str]) -> bytes:
         """
@@ -14,31 +22,21 @@ class CommandHandler:
         if not command:
             return b"-ERR no command provided\r\n"
 
-        cmd = command[0].lower()
-        args = command[1:]
+        cmd, *args = command
 
-        if cmd == "ping":
-            return self.ping()
-        elif cmd == "echo":
-            return self.echo(args)
-        elif cmd == "set":
-            return await self.set(args)
-        elif cmd == "get":
-            return await self.get(args)
-        elif cmd == "del":
-            return await self.delete(args)
-        if cmd == "config" and args[0].lower() == "get":
-            return self.config_get(args[1:])
+        handler = self.command_registry.get(cmd.lower())
+        if handler:
+            return await handler(args)
         else:
-            return f"-ERR unknown command '{command[0]}'\r\n".encode()
+            return f"-ERR unknown command '{cmd}'\r\n".encode()
 
-    def ping(self) -> bytes:
+    async def ping(self, args: list[str]) -> bytes:
         """
         Simple PING command.
         """
         return b"+PONG\r\n"
 
-    def echo(self, args: list[str]) -> bytes:
+    async def echo(self, args: list[str]) -> bytes:
         """
         ECHO command to return the message sent to it.
         """
@@ -80,7 +78,7 @@ class CommandHandler:
             await self.database.delete(key)
         return f":{len(args)}\r\n".encode()
 
-    def config_get(self, args: list[str]) -> bytes:
+    async def config_get(self, args: list[str]) -> bytes:
         if not args:
             return b"-ERR wrong number of arguments for 'config get' command\r\n"
         key = args[0].lower()
