@@ -1,14 +1,19 @@
+# app/server.py
 import asyncio
 import logging
 
 from app.command_handler import CommandHandler
+from app.config import RedisConfig
 from app.database import RedisDatabase
 
 
 async def handle_connection(
-    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, db: RedisDatabase
-):
-    command_handler = CommandHandler(db)
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    db: RedisDatabase,
+    config: RedisConfig,
+) -> None:
+    command_handler = CommandHandler(db, config)
     addr = writer.get_extra_info("peername")
     logging.info(f"Connected by {addr}")
 
@@ -36,21 +41,14 @@ async def handle_connection(
     logging.info(f"Disconnected by {addr}")
 
 
-async def main(host: str, port: int):
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+async def start_server(host: str, port: int, db: RedisDatabase, config: RedisConfig):
+    async def on_client_connect(
+        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
+        await handle_connection(reader, writer, db, config)
 
-    db = RedisDatabase()
-    server = await asyncio.start_server(
-        lambda r, w: handle_connection(r, w, db), host, port
-    )
+    server = await asyncio.start_server(on_client_connect, host, port)
+    logging.info(f"Server started on {host}:{port}")
+
     async with server:
         await server.serve_forever()
-
-
-if __name__ == "__main__":
-    HOST, PORT = "127.0.0.1", 6379
-    asyncio.run(main(HOST, PORT))

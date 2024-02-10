@@ -1,9 +1,11 @@
+from app.config import RedisConfig
 from app.database import RedisDatabase
 
 
 class CommandHandler:
-    def __init__(self, database: RedisDatabase) -> None:
+    def __init__(self, database: RedisDatabase, config: RedisConfig) -> None:
         self.database = database
+        self.config = config
 
     async def handle_command(self, command: list[str]) -> bytes:
         """
@@ -25,6 +27,8 @@ class CommandHandler:
             return await self.get(args)
         elif cmd == "del":
             return await self.delete(args)
+        if cmd == "config" and args[0].lower() == "get":
+            return self.config_get(args[1:])
         else:
             return f"-ERR unknown command '{command[0]}'\r\n".encode()
 
@@ -75,3 +79,15 @@ class CommandHandler:
         for key in args:
             await self.database.delete(key)
         return f":{len(args)}\r\n".encode()
+
+    def config_get(self, args: list[str]) -> bytes:
+        if not args:
+            return b"-ERR wrong number of arguments for 'config get' command\r\n"
+        key = args[0].lower()
+        if key == "dir":
+            value = self.config.dir
+        elif key == "dbfilename":
+            value = self.config.dbfilename
+        else:
+            return b"-ERR unknown config key\r\n"
+        return f"*2\r\n${len(key)}\r\n{key}\r\n${len(value)}\r\n{value}\r\n".encode()
