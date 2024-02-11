@@ -27,7 +27,7 @@ async def handle_connection(
             break
 
         command = [
-            arg for arg in data.decode().split("\r\n")[:-1] if arg[0] not in "*$"
+            arg.lower() for arg in data.decode().split("\r\n")[:-1] if arg[0] not in "$"
         ]
         response = await command_handler.handle_command(command)
         try:

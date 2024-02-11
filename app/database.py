@@ -1,10 +1,24 @@
 import datetime
+import os
 from typing import Any
+
+from app.rdb_file import RDBFile
 
 
 class RedisDatabase:
-    def __init__(self):
+    def __init__(self, rdb_file_path: str | None = None) -> None:
         self.data: dict[str, tuple[Any, datetime.datetime | None]] = {}
+
+        if rdb_file_path and os.path.exists(rdb_file_path):
+            self.load_rdb_file(rdb_file_path)
+
+    def load_rdb_file(self, filepath: str) -> None:
+        """
+        Load an RDB file into the database.
+        """
+        parsed_data = RDBFile(filepath).data
+
+        self.data = parsed_data
 
     async def set(self, key: str, value: Any, expiry_ms: int | None = None) -> None:
         """
@@ -34,3 +48,9 @@ class RedisDatabase:
         """
         if key in self.data:
             del self.data[key]
+
+    async def keys(self) -> list[str]:
+        """
+        Get all keys in the database.
+        """
+        return list(self.data.keys())

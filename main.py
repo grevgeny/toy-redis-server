@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import os
 
 # main.py
 from app.config import RedisConfig
@@ -32,7 +33,12 @@ async def main() -> None:
     config = RedisConfig(dir=args.dir, dbfilename=args.dbfilename)
 
     # Setup Redis database
-    db = RedisDatabase()
+    rdb_file_path = (
+        os.path.join(config.dir, config.dbfilename)
+        if config.dir and config.dbfilename
+        else None
+    )
+    db = RedisDatabase(rdb_file_path=rdb_file_path)
 
     # Start Redis server
     host, port = "127.0.0.1", 6379
