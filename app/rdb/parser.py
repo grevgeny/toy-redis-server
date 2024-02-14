@@ -1,8 +1,9 @@
 import datetime
+import os
 import struct
 from typing import BinaryIO
 
-from app.rdb_constants import (
+from app.rdb.constants import (
     FORMAT_MAPPING,
     LengthEncoding,
     OpCode,
@@ -25,25 +26,36 @@ def to_datetime(usecs_since_epoch: int) -> datetime.datetime:
     return epoch + datetime.timedelta(microseconds=usecs_since_epoch)
 
 
-class RDBFile:
-    def __init__(self, filepath: str):
+class RDBParser:
+    def __init__(self) -> None:
         self.data = {}
-        self.load(filepath)
 
-    def load(self, filepath: str):
+    @classmethod
+    def load_from_file(cls, filepath: str) -> dict:
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"No such file: {filepath}")
+
         with open(filepath, "rb") as file:
-            self.parse_magic_string(file.read(5))
-            self.parse_version(file.read(4))
-            self.parse_contents(file)
+            parser = cls()
+            parser.parse(file)
 
-    def parse_magic_string(self, magic_string: bytes):
+        return parser.data
+
+    def parse(self, file: BinaryIO) -> None:
+        self.parse_magic_string(file)
+        self.parse_version(file)
+        self.parse_contents(file)
+
+    def parse_magic_string(self, file: BinaryIO) -> None:
+        magic_string = file.read(5)
         if magic_string != b"REDIS":
             raise ValueError("Invalid RDB file format")
 
-    def parse_version(self, version_bytes: bytes):
+    def parse_version(self, file: BinaryIO) -> None:
+        version_bytes = file.read(4)
         _ = int(version_bytes.decode())
 
-    def parse_contents(self, file: BinaryIO):
+    def parse_contents(self, file: BinaryIO) -> None:
         while True:
             op_code = read(file, "BYTE")
             if op_code == OpCode.EOF:
