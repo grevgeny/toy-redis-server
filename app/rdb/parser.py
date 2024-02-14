@@ -1,6 +1,6 @@
 import datetime
 import struct
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 from app.rdb.constants import (
     FORMAT_MAPPING,
@@ -27,10 +27,12 @@ def to_datetime(usecs_since_epoch: int) -> datetime.datetime:
 
 class RDBParser:
     def __init__(self) -> None:
-        self.data = {}
+        self.data: dict[str, tuple[Any, datetime.datetime | None]] = {}
 
     @classmethod
-    def load_from_file(cls, filepath: str) -> dict:
+    def load_from_file(
+        cls, filepath: str
+    ) -> dict[str, tuple[Any, datetime.datetime | None]]:
         with open(filepath, "rb") as file:
             parser = cls()
             parser.parse(file)
