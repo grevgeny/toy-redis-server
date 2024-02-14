@@ -1,5 +1,4 @@
 import datetime
-import os
 import struct
 from typing import BinaryIO
 
@@ -32,9 +31,6 @@ class RDBParser:
 
     @classmethod
     def load_from_file(cls, filepath: str) -> dict:
-        if not os.path.exists(filepath):
-            raise FileNotFoundError(f"No such file: {filepath}")
-
         with open(filepath, "rb") as file:
             parser = cls()
             parser.parse(file)

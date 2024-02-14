@@ -2,7 +2,7 @@ import datetime
 import os
 from typing import Any
 
-from app.rdb_file import RDBFile
+from app.rdb.parser import RDBParser
 
 
 class RedisDatabase:
@@ -16,9 +16,7 @@ class RedisDatabase:
         """
         Load an RDB file into the database.
         """
-        parsed_data = RDBFile(filepath).data
-
-        self.data = parsed_data
+        self.data = RDBParser.load_from_file(filepath)
 
     async def set(self, key: str, value: Any, expiry_ms: int | None = None) -> None:
         """
