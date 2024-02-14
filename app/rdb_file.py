@@ -122,7 +122,7 @@ class RDBFile:
 
         if op_code == Type.STRING:
             value = self.parse_string(file)
-            self.data[key.decode("utf-8")] = value.decode("utf-8")
+            self.data[key.decode("utf-8")] = (value.decode("utf-8"), None)
         else:
             raise NotImplementedError(
                 f"Value type {op_code} parsing is not implemented."
