@@ -154,3 +154,5 @@ cython_debug/
 
 # MacOS stuff
 .DS_Store
+
+*.rdb
