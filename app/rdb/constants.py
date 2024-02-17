@@ -1,11 +1,34 @@
+from enum import Enum, auto
+
+
+class DataType(Enum):
+    SIGNED_CHAR = auto()
+    UNSIGNED_CHAR = auto()
+    SIGNED_SHORT = auto()
+    UNSIGNED_SHORT = auto()
+    SIGNED_INT = auto()
+    UNSIGNED_INT = auto()
+    UNSIGNED_INT_BE = auto()
+    SIGNED_LONG = auto()
+    UNSIGNED_LONG = auto()
+    UNSIGNED_LONG_BE = auto()
+    BINARY_DOUBLE = auto()
+    BINARY_FLOAT = auto()
+
+
 FORMAT_MAPPING = {
-    "BYTE": "B",  # Unsigned byte
-    "INT8": "b",  # Signed byte
-    "INT16": "h",  # Signed short
-    "INT32": "i",  # Signed int
-    "INT64": "q",  # Signed long long
-    "UINT32": ">I",  # Unsigned int (big endian)
-    "UINT64": ">Q",  # Unsigned long long (big endian)
+    DataType.SIGNED_CHAR: "b",
+    DataType.UNSIGNED_CHAR: "B",
+    DataType.SIGNED_SHORT: "h",
+    DataType.UNSIGNED_SHORT: "H",
+    DataType.SIGNED_INT: "i",
+    DataType.UNSIGNED_INT: "I",
+    DataType.UNSIGNED_INT_BE: ">I",
+    DataType.SIGNED_LONG: "q",
+    DataType.UNSIGNED_LONG: "Q",
+    DataType.UNSIGNED_LONG_BE: ">Q",
+    DataType.BINARY_DOUBLE: "d",
+    DataType.BINARY_FLOAT: "f",
 }
 
 
