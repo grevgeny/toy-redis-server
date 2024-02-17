@@ -7,7 +7,7 @@ from app.rdb.parser import RDBParser
 
 class RedisDatabase:
     def __init__(self, rdb_file_path: str | None = None) -> None:
-        self.data: dict[str, tuple[Any, datetime.datetime | None]] = {}
+        self.data: dict[str, tuple[str, datetime.datetime | None]] = {}
 
         if rdb_file_path and os.path.exists(rdb_file_path):
             self.load_rdb_file(rdb_file_path)
@@ -35,7 +35,7 @@ class RedisDatabase:
         Get the value of a key if it hasn't expired.
         """
         value, expiry = self.data.get(key, (None, None))
-        if expiry and expiry < datetime.datetime.now(datetime.timezone.utc):
+        if expiry and expiry < datetime.datetime.now(datetime.UTC):
             await self.delete(key)  # Expire the key
             return None
         return value
