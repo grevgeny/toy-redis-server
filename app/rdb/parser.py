@@ -4,6 +4,7 @@ from typing import Any, BinaryIO
 
 from app.rdb.constants import (
     FORMAT_MAPPING,
+    DataType,
     LengthEncoding,
     OpCode,
     StringEncoding,
@@ -12,27 +13,28 @@ from app.rdb.constants import (
 
 
 # Helper functions
-def read(file: BinaryIO, data_type: str):
+def unpack_data(file: BinaryIO, data_type: DataType, length: int | None = None) -> Any:
+    if length:
+        return file.read(length)
+
     fmt = FORMAT_MAPPING.get(data_type)
     if not fmt:
         raise ValueError(f"Unsupported data type: {data_type}")
-    size = struct.calcsize(fmt)
-    return struct.unpack(fmt, file.read(size))[0]
 
-
-def to_datetime(usecs_since_epoch: int) -> datetime.datetime:
-    epoch = datetime.datetime.utcfromtimestamp(0)
-    return epoch + datetime.timedelta(microseconds=usecs_since_epoch)
+    data = file.read(struct.calcsize(fmt))
+    return struct.unpack(fmt, data)[0]
 
 
 class RDBParser:
     def __init__(self) -> None:
-        self.data: dict[str, tuple[Any, datetime.datetime | None]] = {}
+        self.data: dict[str, tuple[str, datetime.datetime | None]] = {}
+
+        self._expiry_dt: datetime.datetime | None = None
 
     @classmethod
     def load_from_file(
         cls, filepath: str
-    ) -> dict[str, tuple[Any, datetime.datetime | None]]:
+    ) -> dict[str, tuple[str, datetime.datetime | None]]:
         with open(filepath, "rb") as file:
             parser = cls()
             parser.parse(file)
@@ -45,17 +47,15 @@ class RDBParser:
         self.parse_contents(file)
 
     def parse_magic_string(self, file: BinaryIO) -> None:
-        magic_string = file.read(5)
-        if magic_string != b"REDIS":
+        if unpack_data(file, DataType.UNSIGNED_CHAR, 5) != b"REDIS":
             raise ValueError("Invalid RDB file format")
 
     def parse_version(self, file: BinaryIO) -> None:
-        version_bytes = file.read(4)
-        _ = int(version_bytes.decode())
+        _ = unpack_data(file, DataType.UNSIGNED_CHAR, 4)
 
     def parse_contents(self, file: BinaryIO) -> None:
         while True:
-            op_code = read(file, "BYTE")
+            op_code = unpack_data(file, DataType.UNSIGNED_CHAR)
             if op_code == OpCode.EOF:
                 break
             self.handle_op_code(file, op_code)
@@ -70,33 +70,33 @@ class RDBParser:
             case OpCode.AUX:
                 _, _ = self.parse_auxiliary(file)
             case OpCode.EXPIRETIME:
-                _ = self.parse_expirytime(file)
+                expiry_dt = self.parse_expirytime(file)
+                self._expiry_dt = expiry_dt
             case OpCode.EXPIRETIME_MS:
-                _ = self.parse_expirytime_ms(file)
-            case _:
-                self.parse_key_value(file, op_code)
+                expiry_dt = self.parse_expirytime_ms(file)
+                self._expiry_dt = expiry_dt
+            case value_type:
+                key, value = self.parse_key_value(file, value_type)
+                self.data[key.decode()] = (value.decode(), self._expiry_dt)
+                self._expiry_dt = None
 
     def read_length(self, file: BinaryIO) -> int:
         length, _ = self.parse_length_with_encoding(file)
         return length
 
     def parse_length_with_encoding(self, file: BinaryIO) -> tuple[int, bool]:
-        byte = read(file, "BYTE")
+        byte = unpack_data(file, DataType.UNSIGNED_CHAR)
         encoding = byte >> 6  # Get the two most significant bits for encoding type
 
         if encoding == LengthEncoding.ENCVAL:
-            # Special encoded value (e.g., small integers)
             return byte & 0x3F, True
         elif encoding == LengthEncoding.BIT_6:
-            # Plain 6-bit length
             return byte & 0x3F, False
         elif encoding == LengthEncoding.BIT_14:
-            # 14-bit length stored in two bytes
-            extra = read(file, "byte")
+            extra = unpack_data(file, DataType.UNSIGNED_CHAR)
             return ((byte & 0x3F) << 8) | extra, False
         else:
-            # 32-bit length
-            return read(file, "UINT64"), False
+            raise NotImplementedError("encoding")
 
     def parse_auxiliary(self, file: BinaryIO) -> tuple[bytes, bytes]:
         key = self.parse_string(file)
@@ -108,32 +108,34 @@ class RDBParser:
         if is_encoded:
             return self.read_encoded_value(file, length)
         else:
-            return file.read(length)
+            return unpack_data(file, DataType.UNSIGNED_CHAR, length)
 
     def read_encoded_value(self, file: BinaryIO, encoding: int) -> bytes:
         if encoding == StringEncoding.INT8:
-            return read(file, "INT8")
+            return unpack_data(file, DataType.SIGNED_CHAR)
         elif encoding == StringEncoding.INT16:
-            return read(file, "INT16")
+            return unpack_data(file, DataType.SIGNED_SHORT)
         elif encoding == StringEncoding.INT32:
-            return read(file, "INT32")
-        raise ValueError(f"Unsupported encoding type: {encoding}")
+            return unpack_data(file, DataType.SIGNED_INT)
+        else:
+            raise ValueError(f"Unsupported encoding type: {encoding}")
 
     def parse_expirytime(self, file: BinaryIO) -> datetime.datetime:
-        expiry = read(file, "UINT32")
-        return to_datetime(expiry * 1_000_000)
+        timestamp = unpack_data(file, DataType.UNSIGNED_INT)
+        return datetime.datetime.fromtimestamp(timestamp, tz=datetime.UTC)
 
     def parse_expirytime_ms(self, file: BinaryIO) -> datetime.datetime:
-        expiry_ms = read(file, "UINT64")
-        return to_datetime(expiry_ms * 1_000)
+        timestamp = unpack_data(file, DataType.UNSIGNED_LONG)
+        return datetime.datetime.fromtimestamp(timestamp / 1000.0, tz=datetime.UTC)
 
-    def parse_key_value(self, file: BinaryIO, op_code: int):
+    def parse_key_value(self, file: BinaryIO, value_type: int) -> tuple[Any, Any]:
         key = self.parse_string(file)
 
-        if op_code == Type.STRING:
+        if value_type == Type.STRING:
             value = self.parse_string(file)
-            self.data[key.decode("utf-8")] = (value.decode("utf-8"), None)
         else:
             raise NotImplementedError(
-                f"Value type {op_code} parsing is not implemented."
+                f"Value type {value_type} parsing is not implemented."
             )
+
+        return key, value
