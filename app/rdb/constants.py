@@ -12,33 +12,14 @@ class DataType(Enum):
     SIGNED_LONG = auto()
     UNSIGNED_LONG = auto()
     UNSIGNED_LONG_BE = auto()
-    BINARY_DOUBLE = auto()
-    BINARY_FLOAT = auto()
-
-
-FORMAT_MAPPING = {
-    DataType.SIGNED_CHAR: "b",
-    DataType.UNSIGNED_CHAR: "B",
-    DataType.SIGNED_SHORT: "h",
-    DataType.UNSIGNED_SHORT: "H",
-    DataType.SIGNED_INT: "i",
-    DataType.UNSIGNED_INT: "I",
-    DataType.UNSIGNED_INT_BE: ">I",
-    DataType.SIGNED_LONG: "q",
-    DataType.UNSIGNED_LONG: "Q",
-    DataType.UNSIGNED_LONG_BE: ">Q",
-    DataType.BINARY_DOUBLE: "d",
-    DataType.BINARY_FLOAT: "f",
-}
 
 
 class LengthEncoding:
-    """Defines for encoding the length of keys and values in the RDB file."""
-
     BIT_6 = 0
     BIT_14 = 1
-    BIT_32 = 0x80
     ENCVAL = 3
+    BIT_32 = 128
+    BIT_64 = 129
 
 
 class StringEncoding:
