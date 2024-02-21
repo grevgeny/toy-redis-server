@@ -12,8 +12,8 @@ class RedisDatabase:
         self.data: dict[str, tuple[str, datetime.datetime | None]] = {}
 
         rdb_file_path = (
-            os.path.join(config.dir, config.dbfilename)
-            if config.dir and config.dbfilename
+            os.path.join(config.rdb_dir, config.rdb_filename)
+            if config.rdb_dir and config.rdb_filename
             else None
         )
         if rdb_file_path and os.path.exists(rdb_file_path):
