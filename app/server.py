@@ -3,7 +3,6 @@ import asyncio
 import logging
 
 from app.command_handler import CommandHandler
-from app.config import RedisConfig
 from app.database import RedisDatabase
 
 
@@ -11,9 +10,8 @@ async def handle_connection(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
     db: RedisDatabase,
-    config: RedisConfig,
 ) -> None:
-    command_handler = CommandHandler(db, config)
+    command_handler = CommandHandler(db)
     addr = writer.get_extra_info("peername")
     logging.info(f"Connected by {addr}")
 
@@ -41,11 +39,11 @@ async def handle_connection(
     logging.info(f"Disconnected by {addr}")
 
 
-async def start_server(host: str, port: int, db: RedisDatabase, config: RedisConfig):
+async def start_server(host: str, port: int, db: RedisDatabase):
     async def on_client_connect(
         reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ):
-        await handle_connection(reader, writer, db, config)
+        await handle_connection(reader, writer, db)
 
     server = await asyncio.start_server(on_client_connect, host, port)
     logging.info(f"Server started on {host}:{port}")

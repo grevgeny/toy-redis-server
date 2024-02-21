@@ -1,11 +1,9 @@
-from app.config import RedisConfig
 from app.database import RedisDatabase
 
 
 class CommandHandler:
-    def __init__(self, database: RedisDatabase, redis_config: RedisConfig) -> None:
+    def __init__(self, database: RedisDatabase) -> None:
         self.database = database
-        self.redis_config = redis_config
         self.command_registry = {
             "ping": self.ping,
             "echo": self.echo,
@@ -86,9 +84,9 @@ class CommandHandler:
         if args[0] == "get":
             key = args[1]
             if key == "dir":
-                value = self.redis_config.dir
+                value = self.database.config.dir
             elif key == "dbfilename":
-                value = self.redis_config.dbfilename
+                value = self.database.config.dbfilename
             else:
                 return b"-ERR unknown config key\r\n"
             return (

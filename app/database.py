@@ -2,13 +2,20 @@ import datetime
 import os
 from typing import Any
 
+from app.config import Config
 from app.rdb.parser import RDBParser
 
 
 class RedisDatabase:
-    def __init__(self, rdb_file_path: str | None = None) -> None:
+    def __init__(self, config: Config) -> None:
+        self.config = config
         self.data: dict[str, tuple[str, datetime.datetime | None]] = {}
 
+        rdb_file_path = (
+            os.path.join(config.dir, config.dbfilename)
+            if config.dir and config.dbfilename
+            else None
+        )
         if rdb_file_path and os.path.exists(rdb_file_path):
             self.load_rdb_file(rdb_file_path)
 

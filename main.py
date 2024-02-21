@@ -1,10 +1,10 @@
 import argparse
 import asyncio
 import logging
-import os
+
+from app.config import Config
 
 # main.py
-from app.config import RedisConfig
 from app.database import RedisDatabase
 from app.server import start_server
 
@@ -12,6 +12,12 @@ from app.server import start_server
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, help="The port to listen on")
+    parser.add_argument(
+        "--replicaof",
+        nargs=2,
+        metavar=("MASTER_HOST", "MASTER_PORT"),
+        help="Master host and master port for the replica.",
+    )
     parser.add_argument(
         "--dir", type=str, help="The directory where RDB files are stored"
     )
@@ -27,18 +33,19 @@ async def main() -> None:
     )
 
     args = parse_args()
-    config = RedisConfig(dir=args.dir, dbfilename=args.dbfilename)
-
-    rdb_file_path = (
-        os.path.join(config.dir, config.dbfilename)
-        if config.dir and config.dbfilename
-        else None
+    master_host, master_port = args.replicaof or (None, None)
+    config = Config(
+        dir=args.dir,
+        dbfilename=args.dbfilename,
+        master_host=master_host,
+        master_port=master_port,
     )
-    db = RedisDatabase(rdb_file_path=rdb_file_path)
+
+    db = RedisDatabase(config=config)
 
     host = "127.0.0.1"
     port = args.port or 6379
-    await start_server(host, port, db, config)
+    await start_server(host, port, db)
 
 
 if __name__ == "__main__":
