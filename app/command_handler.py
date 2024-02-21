@@ -84,14 +84,16 @@ class CommandHandler:
         if args[0] == "get":
             key = args[1]
             if key == "dir":
-                value = self.database.config.dir
+                value = self.database.config.rdb_dir
             elif key == "dbfilename":
-                value = self.database.config.dbfilename
+                value = self.database.config.rdb_filename
             else:
                 return b"-ERR unknown config key\r\n"
-            return (
-                f"*2\r\n${len(key)}\r\n{key}\r\n${len(value)}\r\n{value}\r\n".encode()
-            )
+
+            if value:
+                return f"*2\r\n${len(key)}\r\n{key}\r\n${len(value)}\r\n{value}\r\n".encode()
+            else:
+                return b"$-1\r\n"
         else:
             return b"-ERR wrong arguments for 'config' command\r\n"
 
@@ -111,7 +113,9 @@ class CommandHandler:
             return b"-ERR no arguments for 'info' command provided\r\n"
 
         if args[0] == "replication":
-            role = "role:master"
+            role = (
+                "role:master" if not self.database.config.master_host else "role:slave"
+            )
             return f"${len(role)}\r\n{role}\r\n".encode()
         else:
             return b"-ERR wrong arguments for 'info' command\r\n"
