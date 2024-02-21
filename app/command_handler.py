@@ -14,6 +14,7 @@ class CommandHandler:
             "del": self.delete,
             "config": self.config,
             "keys": self.keys,
+            "info": self.info,
         }
 
     async def handle_command(self, command: list[str]) -> bytes:
@@ -106,3 +107,13 @@ class CommandHandler:
         else:
             return b"-ERR wrong arguments for 'keys' command\r\n"
         return f"*{n}\r\n{''.join(keys_array)}".encode()
+
+    async def info(self, args: list[str]) -> bytes:
+        if not args:
+            return b"-ERR no arguments for 'info' command provided\r\n"
+
+        if args[0] == "replication":
+            role = "role:master"
+            return f"${len(role)}\r\n{role}\r\n".encode()
+        else:
+            return b"-ERR wrong arguments for 'info' command\r\n"
