@@ -10,9 +10,8 @@ from app.server import start_server
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Toy Redis Server with RDB Persistence"
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, help="The port to listen on")
     parser.add_argument(
         "--dir", type=str, help="The directory where RDB files are stored"
     )
@@ -21,18 +20,15 @@ def parse_args() -> argparse.Namespace:
 
 
 async def main() -> None:
-    # Setup logging
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # Parse command-line arguments
     args = parse_args()
     config = RedisConfig(dir=args.dir, dbfilename=args.dbfilename)
 
-    # Setup Redis database
     rdb_file_path = (
         os.path.join(config.dir, config.dbfilename)
         if config.dir and config.dbfilename
@@ -40,8 +36,8 @@ async def main() -> None:
     )
     db = RedisDatabase(rdb_file_path=rdb_file_path)
 
-    # Start Redis server
-    host, port = "127.0.0.1", 6379
+    host = "127.0.0.1"
+    port = args.port or 6379
     await start_server(host, port, db, config)
 
 
