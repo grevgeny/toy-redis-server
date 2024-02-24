@@ -1,4 +1,3 @@
-# app/server.py
 import asyncio
 import logging
 
@@ -15,28 +14,25 @@ async def handle_connection(
     addr = writer.get_extra_info("peername")
     logging.info(f"Connected by {addr}")
 
-    while True:
-        try:
-            data = await reader.read(1024)
-        except ConnectionError:
-            logging.error(f"Client suddenly closed while receiving from {addr}")
-            break
-        if not data:
-            break
-
-        command = [
-            arg.lower() for arg in data.decode().split("\r\n")[:-1] if arg[0] not in "$"
-        ]
-        response = await command_handler.handle_command(command)
-        try:
+    try:
+        while data := await reader.read(1024):
+            command = [
+                arg.lower()
+                for arg in data.decode().split("\r\n")[:-1]
+                if arg[0] not in "$"
+            ]
+            response = await command_handler.handle_command(command)
             writer.write(response)
             await writer.drain()
-        except ConnectionError:
-            logging.error("Client suddenly closed, cannot send")
-            break
 
-    writer.close()
-    logging.info(f"Disconnected by {addr}")
+    except ConnectionError:
+        logging.error(f"Connection error with {addr}")
+    except Exception as e:
+        logging.error(f"Unexpected error with {addr}: {str(e)}")
+    finally:
+        writer.close()
+        await writer.wait_closed()
+        logging.info(f"Disconnected by {addr}")
 
 
 async def start_server(host: str, port: int, db: RedisDatabase):
