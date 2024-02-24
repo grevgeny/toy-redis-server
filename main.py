@@ -2,14 +2,13 @@ import argparse
 import asyncio
 import logging
 
-from app.config import Config
-
 # main.py
 from app.database import RedisDatabase
+from app.redis_config import RedisConfig
 from app.server import start_server
 
 
-def parse_args() -> Config:
+def parse_args() -> RedisConfig:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=6379, help="The port to listen on")
     parser.add_argument(
@@ -26,7 +25,7 @@ def parse_args() -> Config:
 
     args = parser.parse_args()
 
-    return Config(
+    return RedisConfig(
         port=args.port,
         rdb_dir=args.dir,
         rdb_filename=args.dbfilename,
@@ -46,7 +45,10 @@ async def main() -> None:
     db = RedisDatabase(config=config)
 
     host = "127.0.0.1"
-    await start_server(host=host, port=config.port, db=db)
+    try:
+        await start_server(host=host, port=config.port, db=db)
+    finally:
+        await db.close()
 
 
 if __name__ == "__main__":
