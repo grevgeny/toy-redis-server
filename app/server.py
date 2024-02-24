@@ -6,6 +6,26 @@ from app.database import RedisDatabase
 from app.resp.decoder import RESPDecoder
 
 
+async def start_server(host: str, port: int, db: RedisDatabase):
+    async def on_client_connect(
+        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
+        await handle_connection(reader, writer, db)
+
+    if (
+        db.config.role == "slave"
+        and (master_host := db.config.master_host)
+        and (master_port := db.config.master_port)
+    ):
+        asyncio.create_task(connect_to_master(master_host, master_port))
+
+    server = await asyncio.start_server(on_client_connect, host, port)
+    logging.info(f"Server started on {host}:{port}")
+
+    async with server:
+        await server.serve_forever()
+
+
 async def handle_connection(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -31,14 +51,29 @@ async def handle_connection(
         logging.info(f"Disconnected by {addr}")
 
 
-async def start_server(host: str, port: int, db: RedisDatabase):
-    async def on_client_connect(
-        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ):
-        await handle_connection(reader, writer, db)
+async def connect_to_master(master_host: str, master_port: int):
+    writer = None
+    try:
+        reader, writer = await asyncio.open_connection(master_host, master_port)
+        logging.info("Connected to master.")
 
-    server = await asyncio.start_server(on_client_connect, host, port)
-    logging.info(f"Server started on {host}:{port}")
+        ping_command = "*1\r\n$4\r\nping\r\n"
+        writer.write(ping_command.encode())
+        await writer.drain()
 
-    async with server:
-        await server.serve_forever()
+        data = await reader.read(100)
+        if data.decode().strip() != "+PONG\r\n".strip():
+            logging.warning("Unexpected response from master: " + data.decode().strip())
+        else:
+            logging.info("Successful handshake with master.")
+
+    except asyncio.TimeoutError:
+        logging.error("Timeout error when connecting to master.")
+    except (ConnectionRefusedError, ConnectionResetError):
+        logging.error("Connection to master refused or reset.")
+    except Exception as e:
+        logging.error(f"Error connecting to master: {e}")
+    finally:
+        if writer:
+            writer.close()
+            await writer.wait_closed()

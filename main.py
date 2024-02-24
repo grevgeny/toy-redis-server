@@ -8,6 +8,23 @@ from app.redis_config import RedisConfig
 from app.server import start_server
 
 
+async def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    config = parse_args()
+    db = RedisDatabase(config=config)
+
+    host = "127.0.0.1"
+    try:
+        await start_server(host=host, port=config.port, db=db)
+    finally:
+        await db.close()
+
+
 def parse_args() -> RedisConfig:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=6379, help="The port to listen on")
@@ -31,24 +48,8 @@ def parse_args() -> RedisConfig:
         rdb_filename=args.dbfilename,
         master_host=args.replicaof[0],
         master_port=args.replicaof[1],
+        role="slave" if args.replicaof[0] else "master",
     )
-
-
-async def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
-    config = parse_args()
-    db = RedisDatabase(config=config)
-
-    host = "127.0.0.1"
-    try:
-        await start_server(host=host, port=config.port, db=db)
-    finally:
-        await db.close()
 
 
 if __name__ == "__main__":

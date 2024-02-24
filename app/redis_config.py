@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class RedisConfig:
+    role: str
     rdb_dir: str | None
     rdb_filename: str | None
     master_host: str | None
