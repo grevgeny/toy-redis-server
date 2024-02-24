@@ -1,62 +1,88 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from app.database import RedisDatabase
+from app.resp.encoder import RESPEncoder
 
 
 @dataclass
 class Command(ABC):
-    database: RedisDatabase
-    args: list[str] = field(default_factory=list)
-
     @abstractmethod
     async def execute(self) -> bytes:
         pass
 
 
+@dataclass
 class PingCommand(Command):
     async def execute(self) -> bytes:
-        return b"+PONG\r\n"
+        return RESPEncoder.encode_simple_string("PONG")
 
 
+@dataclass
 class EchoCommand(Command):
+    args: list[str]
+
     async def execute(self) -> bytes:
         if not self.args:
             return b"-ERR wrong number of arguments for 'echo' command\r\n"
-        message = " ".join(self.args)
-        return f"${len(message)}\r\n{message}\r\n".encode()
+
+        return RESPEncoder.encode_bulk_string(" ".join(self.args))
 
 
+@dataclass
 class SetCommand(Command):
+    database: RedisDatabase
+    args: list[str]
+
     async def execute(self) -> bytes:
         if len(self.args) < 2:
             return b"-ERR wrong number of arguments for 'set' command\r\n"
+
         key, value = self.args[0], self.args[1]
         expiry_ms = int(self.args[3]) if len(self.args) > 3 else None
+
         await self.database.set(key, value, expiry_ms)
-        return b"+OK\r\n"
+
+        return RESPEncoder.encode_simple_string("OK")
 
 
+@dataclass
 class GetCommand(Command):
+    database: RedisDatabase
+    args: list[str]
+
     async def execute(self) -> bytes:
         if len(self.args) != 1:
             return b"-ERR wrong number of arguments for 'get' command\r\n"
+
         key = self.args[0]
         value = await self.database.get(key)
+
         if value is None:
-            return b"$-1\r\n"
-        return f"${len(value)}\r\n{value}\r\n".encode()
+            return RESPEncoder.encode_null()
+
+        return RESPEncoder.encode_bulk_string(value)
 
 
+@dataclass
 class DeleteCommand(Command):
+    database: RedisDatabase
+    args: list[str]
+
     async def execute(self) -> bytes:
         if not self.args:
             return b"-ERR wrong number of arguments for 'del' command\r\n"
+
         total_deleted = sum([await self.database.delete(key) for key in self.args])
-        return f":{total_deleted}\r\n".encode()
+
+        return RESPEncoder.encode_integer(total_deleted)
 
 
+@dataclass
 class ConfigCommand(Command):
+    database: RedisDatabase
+    args: list[str]
+
     async def execute(self) -> bytes:
         if not self.args:
             return b"-ERR wrong number of arguments for 'config get' command\r\n"
@@ -70,24 +96,32 @@ class ConfigCommand(Command):
                 return b"-ERR unknown config key\r\n"
 
             if value:
-                return f"*2\r\n${len(key)}\r\n{key}\r\n${len(value)}\r\n{value}\r\n".encode()
+                return RESPEncoder.encode_array(key, value)
             else:
-                return b"$-1\r\n"
+                return RESPEncoder.encode_null()
         else:
             return b"-ERR wrong arguments for 'config' command\r\n"
 
 
+@dataclass
 class KeysCommand(Command):
+    database: RedisDatabase
+    arg: str
+
     async def execute(self) -> bytes:
-        if not self.args or self.args[0] != "*":
-            return b"-ERR wrong number of arguments for 'keys' command\r\n"
+        if self.arg != "*":
+            return b"-ERR wrong argument for 'keys' command\r\n"
+
         keys = await self.database.keys()
-        n = len(keys)
-        keys_array = [f"${len(key)}\r\n{key}\r\n" for key in keys]
-        return f"*{n}\r\n{''.join(keys_array)}".encode()
+
+        return RESPEncoder.encode_array(*keys)
 
 
+@dataclass
 class InfoCommand(Command):
+    database: RedisDatabase
+    args: list[str]
+
     async def execute(self) -> bytes:
         if not self.args or self.args[0] != "replication":
             return b"-ERR wrong arguments for 'info' command provided\r\n"
@@ -99,33 +133,39 @@ class InfoCommand(Command):
         )
 
         response_parts = [role, master_replid, master_repl_offset]
-        response = "\r\n".join(response_parts)
+        response = "\n".join(response_parts)
 
-        return f"${len(response)}\r\n{response}\r\n".encode()
+        return RESPEncoder.encode_bulk_string(response)
 
 
-async def create_command(
-    command_name: str, args: list[str], database: RedisDatabase
-) -> Command:
-    match command_name:
-        case "ping":
-            return PingCommand(database)
-        case "echo":
-            return EchoCommand(database, args)
-        case "set":
-            return SetCommand(database, args)
-        case "get":
-            return GetCommand(database, args)
-        case "delete":
-            return DeleteCommand(database, args)
-        case "config":
-            return ConfigCommand(database, args)
-        case "keys":
-            return KeysCommand(database, args)
-        case "info":
-            return InfoCommand(database, args)
+@dataclass
+class CommandUnknown(Command):
+    name: str
+
+    async def execute(self) -> bytes:
+        return f"-ERR unknown command {self.name}".encode()
+
+
+async def create_command(raw_command: list[str], database: RedisDatabase) -> Command:
+    match raw_command:
+        case ["ping"]:
+            return PingCommand()
+        case ["echo", *args]:
+            return EchoCommand(args=args)
+        case ["set", *args]:
+            return SetCommand(database=database, args=args)
+        case ["get", *args]:
+            return GetCommand(database=database, args=args)
+        case ["del", *args]:
+            return DeleteCommand(database=database, args=args)
+        case ["config", *args]:
+            return ConfigCommand(database=database, args=args)
+        case ["keys", arg]:
+            return KeysCommand(database=database, arg=arg)
+        case ["info", *args]:
+            return InfoCommand(database=database, args=args)
         case _:
-            raise ValueError(f"Unknown command '{command_name}'")
+            return CommandUnknown(name=raw_command[0])
 
 
 class CommandHandler:
@@ -136,9 +176,5 @@ class CommandHandler:
         if not raw_command:
             return b"-ERR no command provided\r\n"
 
-        command_name, *args = raw_command[1:]
-        try:
-            command = await create_command(command_name, args, self.database)
-            return await command.execute()
-        except ValueError:
-            return f"-ERR unknown command '{command_name}'\r\n".encode()
+        command = await create_command(raw_command, self.database)
+        return await command.execute()

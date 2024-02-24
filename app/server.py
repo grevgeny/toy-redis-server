@@ -3,6 +3,7 @@ import logging
 
 from app.command_handler import CommandHandler
 from app.database import RedisDatabase
+from app.resp.decoder import RESPDecoder
 
 
 async def handle_connection(
@@ -16,12 +17,7 @@ async def handle_connection(
 
     try:
         while data := await reader.read(1024):
-            command = [
-                arg.lower()
-                for arg in data.decode().split("\r\n")[:-1]
-                if arg[0] not in "$"
-            ]
-            response = await command_handler.handle_command(command)
+            response = await command_handler.handle_command(RESPDecoder.decode(data))
             writer.write(response)
             await writer.drain()
 
