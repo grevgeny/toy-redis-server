@@ -94,6 +94,14 @@ async def perform_handshake(
     ):
         return False
 
+    # Attempt PSYNC
+    run_id = "?"
+    offset = "-1"
+    if not await send_command_and_expect(
+        reader, writer, ["psync", run_id, offset], None
+    ):
+        return False
+
     return True
 
 
@@ -101,13 +109,16 @@ async def send_command_and_expect(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
     command: list[str],
-    expected_response: str,
-) -> bool:
+    expected_response: str | None = None,
+) -> str:
     writer.write(RESPEncoder.encode_array(*command))
     await writer.drain()
-    data = await reader.read(100)
+
+    data = await reader.read(1024)
     response = data.decode().strip()
-    if response != expected_response.strip():
+
+    if expected_response and response != expected_response.strip():
         logging.warning(f"Unexpected response from master: {response}")
-        return False
-    return True
+        return ""
+
+    return response

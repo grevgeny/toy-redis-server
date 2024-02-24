@@ -140,11 +140,18 @@ class InfoCommand(Command):
 
 @dataclass
 class ReplconfCommand(Command):
-    database: RedisDatabase
-    args: list[str]
-
     async def execute(self) -> bytes:
         return RESPEncoder.encode_simple_string("OK")
+
+
+@dataclass
+class PsyncCommand(Command):
+    database: RedisDatabase
+
+    async def execute(self) -> bytes:
+        return RESPEncoder.encode_simple_string(
+            f"FULLRESYNC {self.database.config.master_replid} {self.database.config.master_repl_offset}"
+        )
 
 
 @dataclass
@@ -174,7 +181,9 @@ async def create_command(raw_command: list[str], database: RedisDatabase) -> Com
         case ["info", *args]:
             return InfoCommand(database=database, args=args)
         case ["replconf", *args]:
-            return ReplconfCommand(database=database, args=args)
+            return ReplconfCommand()
+        case ["psync", *args]:
+            return PsyncCommand(database=database)
         case _:
             return CommandUnknown(name=raw_command[0])
 
