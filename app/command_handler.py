@@ -16,9 +16,6 @@ class CommandHandler:
         }
 
     async def handle_command(self, command: list[str]) -> bytes:
-        """
-        Dispatch the appropriate command to its handler and return the response.
-        """
         if not command:
             return b"-ERR no command provided\r\n"
 
@@ -108,13 +105,16 @@ class CommandHandler:
         return f"*{n}\r\n{''.join(keys_array)}".encode()
 
     async def info(self, args: list[str]) -> bytes:
-        if not args:
-            return b"-ERR no arguments for 'info' command provided\r\n"
+        if not args or args[0] != "replication":
+            return b"-ERR wrong arguments for 'info' command provided\r\n"
 
-        if args[0] == "replication":
-            role = (
-                "role:master" if not self.database.config.master_host else "role:slave"
-            )
-            return f"${len(role)}\r\n{role}\r\n".encode()
-        else:
-            return b"-ERR wrong arguments for 'info' command\r\n"
+        role = "role:master" if not self.database.config.master_host else "role:slave"
+        master_replid = f"master_replid:{self.database.config.master_replid}"
+        master_repl_offset = (
+            f"master_repl_offset:{self.database.config.master_repl_offset}"
+        )
+
+        response_parts = [role, master_replid, master_repl_offset]
+        response = "\r\n".join(response_parts)
+
+        return f"${len(response)}\r\n{response}\r\n".encode()
