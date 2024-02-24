@@ -45,9 +45,11 @@ class RedisDatabase:
             return None
         return value
 
-    async def delete(self, key: str) -> None:
+    async def delete(self, key: str) -> int:
         if key in self.data:
             del self.data[key]
+            return 1
+        return 0
 
     async def keys(self) -> list[str]:
         return list(self.data.keys())

@@ -74,9 +74,8 @@ class CommandHandler:
         """
         if not args:
             return b"-ERR wrong number of arguments for 'del' command\r\n"
-        for key in args:
-            await self.database.delete(key)
-        return f":{len(args)}\r\n".encode()
+        total_deleted = sum([await self.database.delete(key) for key in args])
+        return f":{total_deleted}\r\n".encode()
 
     async def config(self, args: list[str]) -> bytes:
         if not args:
