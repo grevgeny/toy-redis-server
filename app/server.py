@@ -4,6 +4,7 @@ import logging
 from app.command_handler import CommandHandler
 from app.database import RedisDatabase
 from app.resp.decoder import RESPDecoder
+from app.resp.encoder import RESPEncoder
 
 
 async def start_server(host: str, port: int, db: RedisDatabase):
@@ -17,7 +18,7 @@ async def start_server(host: str, port: int, db: RedisDatabase):
         and (master_host := db.config.master_host)
         and (master_port := db.config.master_port)
     ):
-        asyncio.create_task(connect_to_master(master_host, master_port))
+        asyncio.create_task(connect_to_master(master_host, master_port, db.config.port))
 
     server = await asyncio.start_server(on_client_connect, host, port)
     logging.info(f"Server started on {host}:{port}")
@@ -51,21 +52,16 @@ async def handle_connection(
         logging.info(f"Disconnected by {addr}")
 
 
-async def connect_to_master(master_host: str, master_port: int):
+async def connect_to_master(master_host: str, master_port: int, port: int):
     writer = None
     try:
         reader, writer = await asyncio.open_connection(master_host, master_port)
         logging.info("Connected to master.")
 
-        ping_command = "*1\r\n$4\r\nping\r\n"
-        writer.write(ping_command.encode())
-        await writer.drain()
-
-        data = await reader.read(100)
-        if data.decode().strip() != "+PONG\r\n".strip():
-            logging.warning("Unexpected response from master: " + data.decode().strip())
-        else:
+        if await perform_handshake(reader, writer, port):
             logging.info("Successful handshake with master.")
+        else:
+            logging.error("Handshake with master failed.")
 
     except asyncio.TimeoutError:
         logging.error("Timeout error when connecting to master.")
@@ -77,3 +73,41 @@ async def connect_to_master(master_host: str, master_port: int):
         if writer:
             writer.close()
             await writer.wait_closed()
+
+
+async def perform_handshake(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, port: int
+) -> bool:
+    # Ping command
+    if not await send_command_and_expect(reader, writer, ["ping"], "+PONG"):
+        return False
+
+    # Configure listening port
+    if not await send_command_and_expect(
+        reader, writer, ["replconf", "listening-port", str(port)], "+OK"
+    ):
+        return False
+
+    # Capability negotiation
+    if not await send_command_and_expect(
+        reader, writer, ["replconf", "capa", "npsync2"], "+OK"
+    ):
+        return False
+
+    return True
+
+
+async def send_command_and_expect(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    command: list[str],
+    expected_response: str,
+) -> bool:
+    writer.write(RESPEncoder.encode_array(*command))
+    await writer.drain()
+    data = await reader.read(100)
+    response = data.decode().strip()
+    if response != expected_response.strip():
+        logging.warning(f"Unexpected response from master: {response}")
+        return False
+    return True
