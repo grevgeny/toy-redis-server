@@ -79,18 +79,18 @@ async def perform_handshake(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, port: int
 ) -> bool:
     # Ping command
-    if not await send_command_and_expect(reader, writer, ["ping"], "+PONG"):
+    if not await send_command_and_expect(reader, writer, ["PING"], "+PONG"):
         return False
 
     # Configure listening port
     if not await send_command_and_expect(
-        reader, writer, ["replconf", "listening-port", str(port)], "+OK"
+        reader, writer, ["REPLCONF", "listening-port", str(port)], "+OK"
     ):
         return False
 
     # Capability negotiation
     if not await send_command_and_expect(
-        reader, writer, ["replconf", "capa", "npsync2"], "+OK"
+        reader, writer, ["REPLCONF", "capa", "npsync2"], "+OK"
     ):
         return False
 
@@ -98,7 +98,7 @@ async def perform_handshake(
     run_id = "?"
     offset = "-1"
     if not await send_command_and_expect(
-        reader, writer, ["psync", run_id, offset], None
+        reader, writer, ["PSYNC", run_id, offset], None
     ):
         return False
 

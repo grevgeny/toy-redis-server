@@ -163,7 +163,12 @@ class CommandUnknown(Command):
 
 
 async def create_command(raw_command: list[str], database: RedisDatabase) -> Command:
-    match raw_command:
+    if not raw_command:  # Early return if raw_command is empty
+        return CommandUnknown(name="")
+
+    normalized_command = [raw_command[0].lower(), *raw_command[1:]]
+
+    match normalized_command:
         case ["ping"]:
             return PingCommand()
         case ["echo", *args]:
