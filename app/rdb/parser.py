@@ -1,4 +1,5 @@
 import datetime
+import io
 from typing import Any, BinaryIO
 
 from app.rdb.constants import (
@@ -24,6 +25,16 @@ class RDBParser:
         with open(filepath, "rb") as file:
             parser = cls()
             parser.parse(file)
+
+        return parser.data
+
+    @classmethod
+    def load_from_bytes(
+        cls, data: bytes
+    ) -> dict[str, tuple[str, datetime.datetime | None]]:
+        with io.BytesIO(data) as data_stream:
+            parser = cls()
+            parser.parse(data_stream)
 
         return parser.data
 
