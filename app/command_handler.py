@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from app.database import RedisDatabase
+from app.rdb.helpers import get_empty_rdb
 from app.resp.encoder import RESPEncoder
 
 
@@ -149,9 +150,12 @@ class PsyncCommand(Command):
     database: RedisDatabase
 
     async def execute(self) -> bytes:
-        return RESPEncoder.encode_simple_string(
+        full_resync = RESPEncoder.encode_simple_string(
             f"FULLRESYNC {self.database.config.master_replid} {self.database.config.master_repl_offset}"
         )
+        empty_rdb = get_empty_rdb()
+
+        return full_resync + f"${len(empty_rdb)}\r\n".encode() + empty_rdb
 
 
 @dataclass

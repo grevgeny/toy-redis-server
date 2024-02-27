@@ -33,6 +33,6 @@ def unpack_data(file: BinaryIO, data_type: DataType) -> int:
     return struct.unpack(fmt, data)[0]
 
 
-def get_empty_rdb():
+def get_empty_rdb() -> bytes:
     EMPTY_RDS_BASE64 = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
     return base64.b64decode(EMPTY_RDS_BASE64)
