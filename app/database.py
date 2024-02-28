@@ -1,33 +1,55 @@
+from __future__ import annotations
+
 import asyncio
 import datetime
 import os
 from typing import Any
 
+from app.exceptions import ReplicationInitializationError
 from app.rdb.parser import RDBParser
 from app.redis_config import RedisConfig
+from app.replication_manager import ReplicationManager
 
 
 class RedisDatabase:
-    def __init__(self, config: RedisConfig) -> None:
+    def __init__(
+        self,
+        config: RedisConfig,
+        data: dict[str, tuple[str, datetime.datetime | None]],
+    ) -> None:
         self.config = config
-        self.data: dict[str, tuple[str, datetime.datetime | None]] = {}
-        self._init_database()
-
-    def _init_database(self) -> None:
-        rdb_file_path = self._get_rdb_file_path()
-        if rdb_file_path and os.path.exists(rdb_file_path):
-            self.load_rdb_file(rdb_file_path)
-        self.cleanup_task = asyncio.create_task(
+        self.data = data
+        self.cleanup_task: asyncio.Task = asyncio.create_task(
             self.expire_keys_periodically(interval=60)
         )
 
-    def _get_rdb_file_path(self) -> str | None:
-        if self.config.rdb_dir and self.config.rdb_filename:
-            return os.path.join(self.config.rdb_dir, self.config.rdb_filename)
-        return None
+    @classmethod
+    def init_master(cls, config: RedisConfig) -> RedisDatabase:
+        if config.rdb_dir and config.rdb_filename:
+            file_path = os.path.join(config.rdb_dir, config.rdb_filename)
+        else:
+            file_path = None
 
-    def load_rdb_file(self, filepath: str) -> None:
-        self.data = RDBParser.load_from_file(filepath)
+        if file_path and os.path.exists(file_path):
+            data = RDBParser.load_from_file(file_path)
+        else:
+            data = {}
+
+        return cls(config, data)
+
+    @classmethod
+    async def init_slave(cls, config: RedisConfig) -> RedisDatabase:
+        replication_manager = ReplicationManager(config)
+        success, rdb_data = await replication_manager.connect_to_master()
+
+        if success and rdb_data is not None:
+            data = RDBParser.load_from_bytes(rdb_data)
+            return cls(config, data)
+        else:
+            await replication_manager.close_connection()
+            raise ReplicationInitializationError(
+                "Failed to initialize replication from master."
+            )
 
     async def set(self, key: str, value: Any, expiry_ms: int | None = None) -> None:
         expiry = (
