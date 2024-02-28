@@ -2,14 +2,11 @@ import argparse
 import asyncio
 import logging
 
-# main.py
-from app.database import RedisDatabase
-from app.exceptions import ReplicationInitializationError
 from app.redis_config import RedisConfig, Role
-from app.server import start_server
+from app.server import MasterRedisServer, SlaveRedisServer
 
 
-def create_redis_config_from_args() -> RedisConfig:
+def parse_args() -> RedisConfig:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--host", type=str, default="127.0.0.1", help="The host address to bind"
@@ -40,31 +37,24 @@ def create_redis_config_from_args() -> RedisConfig:
     )
 
 
-async def main(config: RedisConfig) -> None:
+async def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    db = None
-    if config.role == Role.SLAVE:
-        try:
-            db = await RedisDatabase.init_slave(config=config)
-        except ReplicationInitializationError as e:
-            logging.error(f"Failed to start as a slave: {e}")
-    else:
-        db = RedisDatabase.init_master(config=config)
+    config = parse_args()
 
-    if db:
-        try:
-            await start_server(host=config.host, port=config.port, db=db)
-        finally:
-            await db.close()
+    if config.role == Role.MASTER:
+        logging.info("Starting as master")
+        server = MasterRedisServer(config)
     else:
-        logging.error("Database initialization failed. Exiting.")
+        logging.info("Starting as slave")
+        server = SlaveRedisServer(config)
+
+    await server.start()
 
 
 if __name__ == "__main__":
-    config = create_redis_config_from_args()
-    asyncio.run(main(config))
+    asyncio.run(main())
