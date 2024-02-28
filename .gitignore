@@ -156,3 +156,5 @@ cython_debug/
 .DS_Store
 
 *.rdb
+.vscode/settings.json
+TODO.md

@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import logging
 import os
 from typing import Any
 
-from app.exceptions import ReplicationInitializationError
 from app.rdb.parser import RDBParser
 from app.redis_config import RedisConfig
-from app.replication_manager import ReplicationManager
 
 
 class RedisDatabase:
@@ -19,9 +18,15 @@ class RedisDatabase:
     ) -> None:
         self.config = config
         self.data = data
-        self.cleanup_task: asyncio.Task = asyncio.create_task(
+
+        self.cleanup_task = asyncio.create_task(
             self.expire_keys_periodically(interval=60)
         )
+
+        self.replicas: dict[tuple[str, str], asyncio.StreamWriter] = {}
+        self.command_queue: list[bytes] = []
+
+        self.flush_task = asyncio.create_task(self.flush_buffer_periodically())
 
     @classmethod
     def init_master(cls, config: RedisConfig) -> RedisDatabase:
@@ -38,18 +43,9 @@ class RedisDatabase:
         return cls(config, data)
 
     @classmethod
-    async def init_slave(cls, config: RedisConfig) -> RedisDatabase:
-        replication_manager = ReplicationManager(config)
-        success, rdb_data = await replication_manager.connect_to_master()
-
-        if success and rdb_data is not None:
-            data = RDBParser.load_from_bytes(rdb_data)
-            return cls(config, data)
-        else:
-            await replication_manager.close_connection()
-            raise ReplicationInitializationError(
-                "Failed to initialize replication from master."
-            )
+    def init_slave(cls, config: RedisConfig, rdb_data: bytes) -> RedisDatabase:
+        data = RDBParser.load_from_bytes(rdb_data)
+        return cls(config, data)
 
     async def set(self, key: str, value: Any, expiry_ms: int | None = None) -> None:
         expiry = (
@@ -86,10 +82,48 @@ class RedisDatabase:
             for key in keys_to_expire:
                 await self.delete(key)
 
+    def add_command_to_queue(self, raw_command: bytes):
+        self.command_queue.append(raw_command)
+
+    async def flush_buffer_periodically(self):
+        while True:
+            await asyncio.sleep(1)
+            await self.flush_command_buffer()
+
+    async def flush_command_buffer(self) -> None:
+        if not self.command_queue:
+            return
+
+        for client_id, writer in self.replicas.items():
+            try:
+                for command in self.command_queue:
+                    writer.write(command)
+                    await writer.drain()
+                logging.info(f"Commands sent to replica {client_id}")
+
+            except ConnectionError as e:
+                logging.error(
+                    f"Failed to send commands to replica {client_id}: Connection Error - {e}"
+                )
+            except Exception as e:
+                logging.critical(
+                    f"Unexpected critical error with replica {client_id}: {e}"
+                )
+
+        # Clear the buffer after successful replication
+        self.command_queue.clear()
+
     async def close(self) -> None:
         if self.cleanup_task:
             self.cleanup_task.cancel()
             try:
                 await self.cleanup_task
+            except asyncio.CancelledError:
+                pass
+
+        if self.flush_task:
+            self.flush_task.cancel()
+            try:
+                await self.flush_task
             except asyncio.CancelledError:
                 pass

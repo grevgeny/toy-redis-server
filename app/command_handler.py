@@ -1,13 +1,18 @@
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from app.database import RedisDatabase
 from app.rdb.helpers import get_empty_rdb
+from app.redis_config import Role
+from app.resp.decoder import RESPDecoder
 from app.resp.encoder import RESPEncoder
 
 
 @dataclass
 class Command(ABC):
+    to_replicate = False
+
     @abstractmethod
     async def execute(self) -> bytes:
         pass
@@ -15,12 +20,15 @@ class Command(ABC):
 
 @dataclass
 class PingCommand(Command):
+    to_replicate = False
+
     async def execute(self) -> bytes:
         return RESPEncoder.encode_simple_string("PONG")
 
 
 @dataclass
 class EchoCommand(Command):
+    to_replicate = False
     args: list[str]
 
     async def execute(self) -> bytes:
@@ -32,6 +40,7 @@ class EchoCommand(Command):
 
 @dataclass
 class SetCommand(Command):
+    to_replicate = True
     database: RedisDatabase
     args: list[str]
 
@@ -49,6 +58,7 @@ class SetCommand(Command):
 
 @dataclass
 class GetCommand(Command):
+    to_replicate = False
     database: RedisDatabase
     args: list[str]
 
@@ -67,6 +77,7 @@ class GetCommand(Command):
 
 @dataclass
 class DeleteCommand(Command):
+    to_replicate = True
     database: RedisDatabase
     args: list[str]
 
@@ -81,6 +92,7 @@ class DeleteCommand(Command):
 
 @dataclass
 class ConfigCommand(Command):
+    to_replicate = False
     database: RedisDatabase
     args: list[str]
 
@@ -106,6 +118,7 @@ class ConfigCommand(Command):
 
 @dataclass
 class KeysCommand(Command):
+    to_replicate = False
     database: RedisDatabase
     arg: str
 
@@ -120,6 +133,7 @@ class KeysCommand(Command):
 
 @dataclass
 class InfoCommand(Command):
+    to_replicate = False
     database: RedisDatabase
     args: list[str]
 
@@ -141,12 +155,15 @@ class InfoCommand(Command):
 
 @dataclass
 class ReplconfCommand(Command):
+    to_replicate = False
+
     async def execute(self) -> bytes:
         return RESPEncoder.encode_simple_string("OK")
 
 
 @dataclass
 class PsyncCommand(Command):
+    to_replicate = False
     database: RedisDatabase
 
     async def execute(self) -> bytes:
@@ -160,6 +177,7 @@ class PsyncCommand(Command):
 
 @dataclass
 class CommandUnknown(Command):
+    to_replicate = False
     name: str
 
     async def execute(self) -> bytes:
@@ -201,9 +219,21 @@ class CommandHandler:
     def __init__(self, database: RedisDatabase) -> None:
         self.database = database
 
-    async def handle_command(self, raw_command: list[str]) -> bytes:
+    async def handle_command(
+        self,
+        raw_command: bytes,
+        writer: asyncio.StreamWriter | None = None,
+    ) -> bytes:
         if not raw_command:
             return b"-ERR no command provided\r\n"
 
-        command = await create_command(raw_command, self.database)
+        decoded_command = RESPDecoder.decode(raw_command)
+        command = await create_command(decoded_command, self.database)
+
+        if command.to_replicate and self.database.config.role == Role.MASTER:
+            self.database.add_command_to_queue(raw_command)
+
+        if isinstance(command, PsyncCommand) and writer:
+            self.database.replicas[writer.get_extra_info("peername")] = writer
+
         return await command.execute()
