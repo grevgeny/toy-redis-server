@@ -43,8 +43,8 @@ class RedisDatabase:
         return cls(config, data)
 
     @classmethod
-    def init_slave(cls, config: RedisConfig, rdb_data: bytes) -> RedisDatabase:
-        data = RDBParser.load_from_bytes(rdb_data)
+    def init_slave(cls, config: RedisConfig, rdb_data: bytes | None) -> RedisDatabase:
+        data = RDBParser.load_from_bytes(rdb_data) if rdb_data else {}
         return cls(config, data)
 
     async def set(self, key: str, value: Any, expiry_ms: int | None = None) -> None:
@@ -97,8 +97,9 @@ class RedisDatabase:
         for client_id, writer in self.replicas.items():
             try:
                 for command in self.command_queue:
-                    writer.write(command)
-                    await writer.drain()
+                    if command:
+                        writer.write(command)
+                        await writer.drain()
                 logging.info(f"Commands sent to replica {client_id}")
 
             except ConnectionError as e:

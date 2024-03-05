@@ -48,10 +48,10 @@ async def main() -> None:
 
     if config.role == Role.MASTER:
         logging.info("Starting as master")
-        server = MasterRedisServer(config)
+        server = MasterRedisServer.from_config(config)
     else:
         logging.info("Starting as slave")
-        server = SlaveRedisServer(config)
+        server = await SlaveRedisServer.from_config(config)
 
     await server.start()
 
