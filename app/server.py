@@ -19,7 +19,6 @@ class Server:
         server = await asyncio.start_server(
             self.handle_connection, self.host, self.port
         )
-        logging.info(f"Server started on {self.host}:{self.port}")
 
         async with server:
             await server.serve_forever()
@@ -28,13 +27,10 @@ class Server:
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
         addr = writer.get_extra_info("peername")
-        logging.info(f"New connection by {addr}")
 
         try:
             while command := await reader.read(1024):
-                response = await self.command_handler.handle_command(command, writer)
-                writer.write(response)
-                await writer.drain()
+                await self.command_handler.handle_command(command, writer)
         except Exception as e:
             logging.error(f"Error with {addr}: {str(e)}")
         finally:
@@ -101,5 +97,8 @@ class SlaveRedisServer(Server):
             raise ConnectionError("Cannot connect to master server.")
 
     async def start(self) -> None:
-        await self.replication_manager.start_replication(self.command_handler)
+        asyncio.create_task(
+            self.replication_manager.start_replication(self.command_handler)
+        )
+
         await super().start()

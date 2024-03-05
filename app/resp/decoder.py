@@ -14,7 +14,7 @@ class RESPDecoder:
         return value.decode("utf-8")
 
     @staticmethod
-    def decode_array(data: bytes) -> list[str]:
+    def decode_array(data: bytes) -> tuple[list[str], Any]:
         n, rest = data.split(b"\r\n", 1)
         num_elements = int(n)
         elements: list[str] = []
@@ -23,10 +23,13 @@ class RESPDecoder:
             next_data, rest = RESPDecoder._split_next(rest)
             elements.append(RESPDecoder.decode(next_data))
 
-        return elements
+        return elements, *RESPDecoder.decode(rest)
 
     @staticmethod
     def decode(raw_data: bytes) -> Any:
+        if raw_data == b"":
+            return ""
+
         datatype, encoded_data = raw_data[0:1], raw_data[1:]
 
         if datatype == b"+":

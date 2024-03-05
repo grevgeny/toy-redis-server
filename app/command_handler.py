@@ -223,17 +223,23 @@ class CommandHandler:
         self,
         raw_command: bytes,
         writer: asyncio.StreamWriter | None = None,
-    ) -> bytes:
+    ) -> None:
         if not raw_command:
-            return b"-ERR no command provided\r\n"
+            response = b"-ERR no command provided\r\n"
+            if writer:
+                writer.write(response)
+                await writer.drain()
 
-        decoded_command = RESPDecoder.decode(raw_command)
-        command = await create_command(decoded_command, self.database)
+        decoded_commands = RESPDecoder.decode(raw_command)
+        for decoded_command in decoded_commands:
+            command = await create_command(decoded_command, self.database)
+            if command.to_replicate and self.database.config.role == Role.MASTER:
+                self.database.add_command_to_queue(raw_command)
 
-        if command.to_replicate and self.database.config.role == Role.MASTER:
-            self.database.add_command_to_queue(raw_command)
+            if isinstance(command, PsyncCommand) and writer:
+                self.database.replicas[writer.get_extra_info("peername")] = writer
 
-        if isinstance(command, PsyncCommand) and writer:
-            self.database.replicas[writer.get_extra_info("peername")] = writer
-
-        return await command.execute()
+            response = await command.execute()
+            if writer:
+                writer.write(response)
+                await writer.drain()
