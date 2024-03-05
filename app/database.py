@@ -100,7 +100,6 @@ class RedisDatabase:
                     if command:
                         writer.write(command)
                         await writer.drain()
-                logging.info(f"Commands sent to replica {client_id}")
 
             except ConnectionError as e:
                 logging.error(
