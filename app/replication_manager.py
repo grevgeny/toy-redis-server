@@ -15,6 +15,9 @@ class ReplicationManager:
         self.master_port = master_port
         self.slave_port = slave_port
 
+        self.reader: asyncio.StreamReader | None = None
+        self.writer: asyncio.StreamWriter | None = None
+
         self.is_connected: bool = False
         self.initial_data: bytes | None = None
         self.slave_db: RedisDatabase | None = None
@@ -43,6 +46,9 @@ class ReplicationManager:
             self.is_connected = False
 
     async def perform_handshake(self) -> None:
+        if not self.writer or not self.reader:
+            return
+
         # Ping command
         self.writer.write(RESPEncoder.encode_array("PING"))
         await self.writer.drain()
@@ -97,7 +103,12 @@ class ReplicationManager:
         return self
 
     async def start_replication(self) -> None:
-        if not self.is_connected or not self.slave_db:
+        if (
+            not self.is_connected
+            or not self.slave_db
+            or not self.reader
+            or not self.writer
+        ):
             logging.error("ReplicationManager is not properly initialized.")
             return
 
@@ -111,15 +122,27 @@ class ReplicationManager:
                     if len(decoded_command) < 2:
                         continue
 
-                    command, *args = decoded_command
+                    normalized_command = [
+                        decoded_command[0].lower(),
+                        *map(
+                            lambda x: x.lower(),
+                            decoded_command[1:],
+                        ),
+                    ]
 
-                    if command.lower() == "set":
-                        key, value = args[0], args[1]
-                        expiry_ms = int(args[3]) if len(args) > 3 else None
-                        await self.slave_db.set(key, value, expiry_ms)
-                    else:
-                        logging.warning(f"Unsupported command: {command}")
-                        continue
+                    match normalized_command:
+                        case ["set", *args]:
+                            key, value = args[0], args[1]
+                            expiry_ms = int(args[3]) if len(args) > 3 else None
+                            await self.slave_db.set(key, value, expiry_ms)
+                        case ["replconf", "getack", "*"]:
+                            response = RESPEncoder.encode_array("REPLCONF", "ACK", "0")
+                            self.writer.write(response)
+                        case _:
+                            logging.warning(
+                                f"Unsupported command: {normalized_command}"
+                            )
+                            continue
 
         except Exception as e:
             logging.error(f"Replication error: {e}")
