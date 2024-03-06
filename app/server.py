@@ -26,17 +26,19 @@ class Server:
     async def handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
-        addr = writer.get_extra_info("peername")
+        peername = writer.get_extra_info("peername")
 
         try:
             while command := await reader.read(1024):
-                await self.command_handler.handle_command(command, writer)
+                response = await self.command_handler.handle_command(command, writer)
+                writer.write(response)
+                await writer.drain()
         except Exception as e:
-            logging.error(f"Error with {addr}: {str(e)}")
+            logging.error(f"Error with {peername}: {str(e)}")
         finally:
             writer.close()
             await writer.wait_closed()
-            logging.info(f"Disconnected by {addr}")
+            logging.info(f"Disconnected by {peername}")
 
 
 class MasterRedisServer(Server):
@@ -71,11 +73,7 @@ class SlaveRedisServer(Server):
         command_handler: CommandHandler,
         replication_manager: ReplicationManager,
     ) -> None:
-        super().__init__(
-            host,
-            port,
-            command_handler,
-        )
+        super().__init__(host, port, command_handler)
         self.replication_manager = replication_manager
 
     @classmethod
@@ -90,15 +88,13 @@ class SlaveRedisServer(Server):
                 redis_config.host,
                 redis_config.port,
                 CommandHandler(redis_database),
-                replication_manager,
+                replication_manager.set_slave_db(redis_database),
             )
         else:
             logging.error("Failed to initialize replication manager.")
+            print(replication_manager.__dict__)
             raise ConnectionError("Cannot connect to master server.")
 
     async def start(self) -> None:
-        asyncio.create_task(
-            self.replication_manager.start_replication(self.command_handler)
-        )
-
+        asyncio.create_task(self.replication_manager.start_replication())
         await super().start()

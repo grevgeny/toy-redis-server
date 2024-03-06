@@ -3,27 +3,21 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.command_handler import CommandHandler
+from app.database import RedisDatabase
 from app.redis_config import RedisConfig
+from app.resp.decoder import RESPDecoder
 from app.resp.encoder import RESPEncoder
 
 
 class ReplicationManager:
-    def __init__(self, master_host: str, master_port: int, slave_port: int):
+    def __init__(self, master_host: str, master_port: int, slave_port: int) -> None:
         self.master_host = master_host
         self.master_port = master_port
         self.slave_port = slave_port
 
-        self._is_connected: bool = False
-        self._initial_data: bytes | None = None
-
-    @property
-    def is_connected(self) -> bool:
-        return self._is_connected
-
-    @property
-    def initial_data(self) -> bytes | None:
-        return self._initial_data
+        self.is_connected: bool = False
+        self.initial_data: bytes | None = None
+        self.slave_db: RedisDatabase | None = None
 
     @classmethod
     async def initialize(cls, redis_config: RedisConfig) -> ReplicationManager | None:
@@ -43,11 +37,10 @@ class ReplicationManager:
                 self.master_host, self.master_port
             )
             await self.perform_handshake()
-            self._is_connected = True
-            logging.info("Successfully connected to master.")
+            self.is_connected = True
         except Exception as e:
             logging.error(f"Failed to connect to master: {e}")
-            self._is_connected = False
+            self.is_connected = False
 
     async def perform_handshake(self) -> None:
         # Ping command
@@ -95,24 +88,39 @@ class ReplicationManager:
             length_str = length_line.decode().strip()
             _, rdb_length = length_str.split("$")
 
-            self._initial_data = await self.reader.readexactly(int(rdb_length))
+            self.initial_data = await self.reader.readexactly(int(rdb_length))
         else:
             logging.error("PSYNC did not result in a FULLRESYNC response.")
 
-    async def start_replication(self, command_handler: CommandHandler) -> None:
-        if not self.is_connected:
-            logging.error("ReplicationManager is not connected to master.")
-            return
+    def set_slave_db(self, database: RedisDatabase) -> ReplicationManager:
+        self.slave_db = database
+        return self
 
-        if not command_handler:
+    async def start_replication(self) -> None:
+        if not self.is_connected or not self.slave_db:
+            logging.error("ReplicationManager is not properly initialized.")
             return
 
         try:
-            while command := await self.reader.read(1024):
-                if not command:
+            while data := await self.reader.read(1024):
+                if not data:
                     break
-                await command_handler.handle_command(command)
-                logging.info(f"Replicating command: {command}")
+
+                decoded_commands = RESPDecoder.decode(data)
+                for decoded_command in decoded_commands:
+                    if len(decoded_command) < 2:
+                        continue
+
+                    command, *args = decoded_command
+
+                    if command.lower() == "set":
+                        key, value = args[0], args[1]
+                        expiry_ms = int(args[3]) if len(args) > 3 else None
+                        await self.slave_db.set(key, value, expiry_ms)
+                    else:
+                        logging.warning(f"Unsupported command: {command}")
+                        continue
+
         except Exception as e:
             logging.error(f"Replication error: {e}")
-            self._connected = False
+            self.connected = False
