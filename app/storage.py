@@ -8,15 +8,10 @@ from typing import Any
 class Storage:
     def __init__(
         self,
-        # config: RedisConfig,
         data: dict[str, tuple[str, datetime.datetime | None]],
     ) -> None:
-        # self.config = config
         self.data = data
         self.cleanup_task = asyncio.create_task(self.expire_keys(interval=60))
-
-        # self.replicas: dict[tuple[str, str], asyncio.StreamWriter] = {}
-        # self.command_queue: list[bytes] = []
 
         # self.flush_task = asyncio.create_task(self.flush_buffer_periodically())
 
@@ -56,9 +51,6 @@ class Storage:
             ]
             for key in keys_to_expire:
                 await self.delete(key)
-
-    # def add_command_to_queue(self, raw_command: bytes):
-    #     self.command_queue.append(raw_command)
 
     # async def flush_buffer_periodically(self):
     #     while True:

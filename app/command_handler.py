@@ -1,12 +1,11 @@
-import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from app.database import RedisDatabase
 from app.rdb.helpers import get_empty_rdb
-from app.redis_config import Role
+from app.redis_config import RedisConfig
 from app.resp.decoder import RESPDecoder
 from app.resp.encoder import RESPEncoder
+from app.storage import Storage
 
 
 @dataclass
@@ -35,7 +34,7 @@ class EchoCommand(Command):
 
 @dataclass
 class SetCommand(Command):
-    database: RedisDatabase
+    storage: Storage
     args: list[str]
 
     async def execute(self) -> bytes:
@@ -45,14 +44,14 @@ class SetCommand(Command):
         key, value = self.args[0], self.args[1]
         expiry_ms = int(self.args[3]) if len(self.args) > 3 else None
 
-        await self.database.set(key, value, expiry_ms)
+        await self.storage.set(key, value, expiry_ms)
 
         return RESPEncoder.encode_simple_string("OK")
 
 
 @dataclass
 class GetCommand(Command):
-    database: RedisDatabase
+    storage: Storage
     args: list[str]
 
     async def execute(self) -> bytes:
@@ -60,7 +59,7 @@ class GetCommand(Command):
             return b"-ERR wrong number of arguments for 'get' command\r\n"
 
         key = self.args[0]
-        value = await self.database.get(key)
+        value = await self.storage.get(key)
 
         if value is None:
             return RESPEncoder.encode_null()
@@ -70,21 +69,21 @@ class GetCommand(Command):
 
 @dataclass
 class DeleteCommand(Command):
-    database: RedisDatabase
+    storage: Storage
     args: list[str]
 
     async def execute(self) -> bytes:
         if not self.args:
             return b"-ERR wrong number of arguments for 'del' command\r\n"
 
-        total_deleted = sum([await self.database.delete(key) for key in self.args])
+        total_deleted = sum([await self.storage.delete(key) for key in self.args])
 
         return RESPEncoder.encode_integer(total_deleted)
 
 
 @dataclass
 class ConfigCommand(Command):
-    database: RedisDatabase
+    config: RedisConfig
     args: list[str]
 
     async def execute(self) -> bytes:
@@ -93,9 +92,9 @@ class ConfigCommand(Command):
         if self.args[0] == "get":
             key = self.args[1]
             if key == "dir":
-                value = self.database.config.rdb_dir
+                value = self.config.rdb_dir
             elif key == "dbfilename":
-                value = self.database.config.rdb_filename
+                value = self.config.rdb_filename
             else:
                 return b"-ERR unknown config key\r\n"
 
@@ -109,32 +108,30 @@ class ConfigCommand(Command):
 
 @dataclass
 class KeysCommand(Command):
-    database: RedisDatabase
+    storage: Storage
     arg: str
 
     async def execute(self) -> bytes:
         if self.arg != "*":
             return b"-ERR wrong argument for 'keys' command\r\n"
 
-        keys = await self.database.keys()
+        keys = await self.storage.keys()
 
         return RESPEncoder.encode_array(*keys)
 
 
 @dataclass
 class InfoCommand(Command):
-    database: RedisDatabase
+    config: RedisConfig
     args: list[str]
 
     async def execute(self) -> bytes:
         if not self.args or self.args[0] != "replication":
             return b"-ERR wrong arguments for 'info' command provided\r\n"
 
-        role = "role:master" if not self.database.config.master_host else "role:slave"
-        master_replid = f"master_replid:{self.database.config.master_replid}"
-        master_repl_offset = (
-            f"master_repl_offset:{self.database.config.master_repl_offset}"
-        )
+        role = "role:master" if not self.config.master_host else "role:slave"
+        master_replid = f"master_replid:{self.config.master_replid}"
+        master_repl_offset = f"master_repl_offset:{self.config.master_repl_offset}"
 
         response_parts = [role, master_replid, master_repl_offset]
         response = "\n".join(response_parts)
@@ -150,11 +147,11 @@ class ReplconfCommand(Command):
 
 @dataclass
 class PsyncCommand(Command):
-    database: RedisDatabase
+    config: RedisConfig
 
     async def execute(self) -> bytes:
         full_resync = RESPEncoder.encode_simple_string(
-            f"FULLRESYNC {self.database.config.master_replid} {self.database.config.master_repl_offset}"
+            f"FULLRESYNC {self.config.master_replid} {self.config.master_repl_offset}"
         )
         empty_rdb = get_empty_rdb()
 
@@ -169,56 +166,59 @@ class CommandUnknown(Command):
         return f"-ERR unknown command {self.name}".encode()
 
 
-async def create_command(raw_command: list[str], database: RedisDatabase) -> Command:
-    if not raw_command:  # Early return if raw_command is empty
-        return CommandUnknown(name="")
-
-    normalized_command = [raw_command[0].lower(), *raw_command[1:]]
-
-    match normalized_command:
-        case ["ping"]:
-            return PingCommand()
-        case ["echo", *args]:
-            return EchoCommand(args=args)
-        case ["set", *args]:
-            return SetCommand(database=database, args=args)
-        case ["get", *args]:
-            return GetCommand(database=database, args=args)
-        case ["del", *args]:
-            return DeleteCommand(database=database, args=args)
-        case ["config", *args]:
-            return ConfigCommand(database=database, args=args)
-        case ["keys", arg]:
-            return KeysCommand(database=database, arg=arg)
-        case ["info", *args]:
-            return InfoCommand(database=database, args=args)
-        case ["replconf", *args]:
-            return ReplconfCommand()
-        case ["psync", *args]:
-            return PsyncCommand(database=database)
-        case _:
-            return CommandUnknown(name=raw_command[0])
-
-
 class CommandHandler:
-    def __init__(self, database: RedisDatabase) -> None:
-        self.database = database
+    def __init__(
+        self,
+        storage: Storage,
+        config: RedisConfig,
+    ) -> None:
+        self.storage = storage
+        self.config = config
 
     async def handle_command(
         self,
         raw_command: bytes,
-        writer: asyncio.StreamWriter,
     ) -> bytes:
         if not raw_command:
             return b"-ERR no command provided\r\n"
 
         decoded_command = RESPDecoder.decode(raw_command)[0]
-        command = await create_command(decoded_command, self.database)
+        command = await self.create_command(decoded_command)
 
-        if isinstance(command, SetCommand) and self.database.config.role == Role.MASTER:
-            self.database.add_command_to_queue(raw_command)
+        # if isinstance(command, SetCommand) and self.config.role == Role.MASTER:
+        #     self.storage.add_command_to_queue(raw_command)
 
-        if isinstance(command, PsyncCommand) and writer:
-            self.database.replicas[writer.get_extra_info("peername")] = writer
+        # if isinstance(command, PsyncCommand) and writer:
+        #     self.storage.replicas[writer.get_extra_info("peername")] = writer
 
         return await command.execute()
+
+    async def create_command(self, raw_command: list[str]) -> Command:
+        if not raw_command:  # Early return if raw_command is empty
+            return CommandUnknown(name="")
+
+        normalized_command = [raw_command[0].lower(), *raw_command[1:]]
+
+        match normalized_command:
+            case ["ping"]:
+                return PingCommand()
+            case ["echo", *args]:
+                return EchoCommand(args)
+            case ["set", *args]:
+                return SetCommand(self.storage, args)
+            case ["get", *args]:
+                return GetCommand(self.storage, args)
+            case ["del", *args]:
+                return DeleteCommand(self.storage, args)
+            case ["config", *args]:
+                return ConfigCommand(self.config, args)
+            case ["keys", arg]:
+                return KeysCommand(self.storage, arg)
+            case ["info", *args]:
+                return InfoCommand(self.config, args)
+            case ["replconf", *args]:
+                return ReplconfCommand()
+            case ["psync", *args]:
+                return PsyncCommand(self.config)
+            case _:
+                return CommandUnknown(name=raw_command[0])

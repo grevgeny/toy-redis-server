@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.database import RedisDatabase
 from app.redis_config import RedisConfig
 from app.resp.decoder import RESPDecoder
 from app.resp.encoder import RESPEncoder
+from app.storage import Storage
 
 
 class ReplicationManager:
@@ -20,7 +20,7 @@ class ReplicationManager:
 
         self.is_connected: bool = False
         self.initial_data: bytes | None = None
-        self.slave_db: RedisDatabase | None = None
+        self.replica_storage: Storage | None = None
 
     @classmethod
     async def initialize(cls, redis_config: RedisConfig) -> ReplicationManager | None:
@@ -98,14 +98,14 @@ class ReplicationManager:
         else:
             logging.error("PSYNC did not result in a FULLRESYNC response.")
 
-    def set_slave_db(self, database: RedisDatabase) -> ReplicationManager:
-        self.slave_db = database
+    def set_replica_storage(self, storage: Storage) -> ReplicationManager:
+        self.replica_storage = storage
         return self
 
     async def start_replication(self) -> None:
         if (
             not self.is_connected
-            or not self.slave_db
+            or not self.replica_storage
             or not self.reader
             or not self.writer
         ):
@@ -134,7 +134,7 @@ class ReplicationManager:
                         case ["set", *args]:
                             key, value = args[0], args[1]
                             expiry_ms = int(args[3]) if len(args) > 3 else None
-                            await self.slave_db.set(key, value, expiry_ms)
+                            await self.replica_storage.set(key, value, expiry_ms)
                         case ["replconf", "getack", "*"]:
                             response = RESPEncoder.encode_array("REPLCONF", "ACK", "0")
                             self.writer.write(response)

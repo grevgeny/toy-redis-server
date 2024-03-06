@@ -31,7 +31,7 @@ class Server:
 
         try:
             while command := await reader.read(1024):
-                response = await self.command_handler.handle_command(command, writer)
+                response = await self.command_handler.handle_command(command)
                 writer.write(response)
                 await writer.drain()
         except Exception as e:
@@ -54,18 +54,23 @@ class MasterRedisServer(Server):
             port,
             command_handler,
         )
+        self.replica_writers: list[asyncio.StreamWriter] = []
+        self.command_queue: list[bytes] = []
 
     @classmethod
     def from_config(cls, redis_config: RedisConfig) -> MasterRedisServer:
         data = data_loading.load_init_data_for_master(redis_config)
         storage = Storage(data)
-        command_handler = CommandHandler(storage, redis_config)
+        command_handler = CommandHandler(storage, redis_config, add_replica_writer_fn)
 
         return cls(
             redis_config.host,
             redis_config.port,
             command_handler,
         )
+
+    def add_replica_writer(self, writer: asyncio.StreamWriter) -> None:
+        self.replica_writers.append(writer)
 
 
 class SlaveRedisServer(Server):
