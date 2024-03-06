@@ -4,9 +4,10 @@ import asyncio
 import logging
 
 from app.command_handler import CommandHandler
-from app.database import RedisDatabase
+from app.rdb import data_loading
 from app.redis_config import RedisConfig
 from app.replication_manager import ReplicationManager
+from app.storage import Storage
 
 
 class Server:
@@ -56,8 +57,10 @@ class MasterRedisServer(Server):
 
     @classmethod
     def from_config(cls, redis_config: RedisConfig) -> MasterRedisServer:
-        redis_database = RedisDatabase.init_master(redis_config)
-        command_handler = CommandHandler(redis_database)
+        data = data_loading.load_init_data_for_master(redis_config)
+        storage = Storage(data)
+        command_handler = CommandHandler(storage, redis_config)
+
         return cls(
             redis_config.host,
             redis_config.port,
@@ -80,20 +83,18 @@ class SlaveRedisServer(Server):
     async def from_config(cls, redis_config: RedisConfig) -> SlaveRedisServer:
         replication_manager = await ReplicationManager.initialize(redis_config)
 
-        if replication_manager and replication_manager.is_connected:
-            redis_database = RedisDatabase.init_slave(
-                redis_config, replication_manager.initial_data
-            )
-            return cls(
-                redis_config.host,
-                redis_config.port,
-                CommandHandler(redis_database),
-                replication_manager.set_slave_db(redis_database),
-            )
-        else:
-            logging.error("Failed to initialize replication manager.")
-            print(replication_manager.__dict__)
-            raise ConnectionError("Cannot connect to master server.")
+        if not replication_manager or not replication_manager.is_connected:
+            raise ConnectionError("Replica could not connect to master.")
+
+        data = data_loading.load_init_data_for_replica(replication_manager.initial_data)
+        storage = Storage(data)
+
+        command_handler = CommandHandler(storage, redis_config)
+        replication_manager = replication_manager.set_replica_storage(storage)
+
+        return cls(
+            redis_config.host, redis_config.port, command_handler, replication_manager
+        )
 
     async def start(self) -> None:
         asyncio.create_task(self.replication_manager.start_replication())
