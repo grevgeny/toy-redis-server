@@ -170,6 +170,14 @@ class PsyncCommand(Command):
 
 
 @dataclass
+class WaitCommand(Command):
+    args: list[str]
+
+    async def execute(self) -> bytes:
+        return RESPEncoder.encode_integer(0)
+
+
+@dataclass
 class CommandUnknown(Command):
     name: str
 
@@ -208,5 +216,7 @@ async def parse_command(
             return ReplconfCommand(args)
         case ["psync", *args]:
             return PsyncCommand(config)
+        case ["wait", *args]:
+            return WaitCommand(args)
         case _:
             return CommandUnknown(name=raw_command[0])
