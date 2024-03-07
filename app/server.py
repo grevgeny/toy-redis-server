@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from functools import partial
 from typing import Awaitable, Callable
 
-from app.commands import Command, PsyncCommand, SetCommand, parse_command
+from app.commands import Command, PsyncCommand, SetCommand, WaitCommand, parse_command
 from app.rdb import data_loading
 from app.redis_config import RedisConfig
 from app.replication_manager import ReplicationManager
@@ -107,6 +107,8 @@ class MasterServer(Server):
             self.replica_writers.append(writer)
         elif isinstance(command, SetCommand):
             self.command_queue.append(data)
+        elif isinstance(command, WaitCommand):
+            command.set_num_replicas(len(self.replica_writers))
 
         return await command.execute()
 

@@ -172,9 +172,13 @@ class PsyncCommand(Command):
 @dataclass
 class WaitCommand(Command):
     args: list[str]
+    num_replicas: int = 0
 
     async def execute(self) -> bytes:
-        return RESPEncoder.encode_integer(0)
+        return RESPEncoder.encode_integer(self.num_replicas)
+
+    def set_num_replicas(self, num_replicas: int) -> None:
+        self.num_replicas = num_replicas
 
 
 @dataclass
