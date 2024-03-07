@@ -11,10 +11,12 @@ from app.rdb.constants import (
 )
 from app.rdb.helpers import read_bytes, unpack_data
 
+Data = dict[str, tuple[str, datetime.datetime | None]]
+
 
 class RDBParser:
     def __init__(self) -> None:
-        self.data: dict[str, tuple[str, datetime.datetime | None]] = {}
+        self.data: Data = {}
 
         self._expiry_dt: datetime.datetime | None = None
 
