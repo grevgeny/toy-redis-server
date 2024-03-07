@@ -3,7 +3,7 @@ import asyncio
 import logging
 
 from app.redis_config import RedisConfig, Role
-from app.server import MasterRedisServer, SlaveRedisServer
+from app.server import MasterServer, ReplicaServer
 
 
 def parse_args() -> RedisConfig:
@@ -24,7 +24,7 @@ def parse_args() -> RedisConfig:
     )
     args = parser.parse_args()
     master_host, master_port = args.replicaof if args.replicaof else (None, None)
-    role = Role.SLAVE if master_host else Role.MASTER
+    role = Role.REPLICA if master_host else Role.MASTER
 
     return RedisConfig(
         host=args.host,
@@ -48,10 +48,10 @@ async def main() -> None:
 
     if config.role == Role.MASTER:
         logging.info("Starting as master")
-        server = MasterRedisServer.from_config(config)
+        server = await MasterServer.from_config(config)
     else:
-        logging.info("Starting as slave")
-        server = await SlaveRedisServer.from_config(config)
+        logging.info("Starting as replica")
+        server = await ReplicaServer.from_config(config)
 
     await server.start()
 

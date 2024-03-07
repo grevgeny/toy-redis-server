@@ -13,8 +13,6 @@ class Storage:
         self.data = data
         self.cleanup_task = asyncio.create_task(self.expire_keys(interval=60))
 
-        # self.flush_task = asyncio.create_task(self.flush_buffer_periodically())
-
     async def set(self, key: str, value: Any, expiry_ms: int | None = None) -> None:
         expiry = (
             (
@@ -52,34 +50,6 @@ class Storage:
             for key in keys_to_expire:
                 await self.delete(key)
 
-    # async def flush_buffer_periodically(self):
-    #     while True:
-    #         await asyncio.sleep(1)
-    #         await self.flush_command_buffer()
-
-    # async def flush_command_buffer(self) -> None:
-    #     if not self.command_queue:
-    #         return
-
-    #     for client_id, writer in self.replicas.items():
-    #         try:
-    #             for command in self.command_queue:
-    #                 if command:
-    #                     writer.write(command)
-    #                     await writer.drain()
-
-    #         except ConnectionError as e:
-    #             logging.error(
-    #                 f"Failed to send commands to replica {client_id}: Connection Error - {e}"
-    #             )
-    #         except Exception as e:
-    #             logging.critical(
-    #                 f"Unexpected critical error with replica {client_id}: {e}"
-    #             )
-
-    #     # Clear the buffer after successful replication
-    #     self.command_queue.clear()
-
     async def close(self) -> None:
         if self.cleanup_task:
             self.cleanup_task.cancel()
@@ -87,10 +57,3 @@ class Storage:
                 await self.cleanup_task
             except asyncio.CancelledError:
                 pass
-
-        # if self.flush_task:
-        #     self.flush_task.cancel()
-        #     try:
-        #         await self.flush_task
-        #     except asyncio.CancelledError:
-        #         pass

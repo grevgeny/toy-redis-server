@@ -146,4 +146,3 @@ class ReplicationManager:
 
         except Exception as e:
             logging.error(f"Replication error: {e}")
-            self.connected = False
