@@ -140,8 +140,20 @@ class InfoCommand(Command):
 
 @dataclass
 class ReplconfCommand(Command):
+    args: list[str]
+
     async def execute(self) -> bytes:
-        return RESPEncoder.encode_simple_string("OK")
+        subcommand, _ = self.args
+
+        match subcommand:
+            case "listening-port":
+                return RESPEncoder.encode_simple_string("OK")
+            case "capa":
+                return RESPEncoder.encode_simple_string("OK")
+            case "getack":
+                return RESPEncoder.encode_array("REPLCONF", "ACK", "0")
+            case _:
+                return b"-ERR unknown subcommand\r\n"
 
 
 @dataclass
@@ -173,7 +185,7 @@ async def parse_command(
     if not raw_command:
         return CommandUnknown(name="")
 
-    normalized_command = [raw_command[0].lower(), *raw_command[1:]]
+    normalized_command = list(map(str.lower, raw_command))
 
     match normalized_command:
         case ["ping"]:
@@ -193,7 +205,7 @@ async def parse_command(
         case ["info", *args]:
             return InfoCommand(config, args)
         case ["replconf", *args]:
-            return ReplconfCommand()
+            return ReplconfCommand(args)
         case ["psync", *args]:
             return PsyncCommand(config)
         case _:

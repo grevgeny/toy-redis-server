@@ -4,7 +4,7 @@ import asyncio
 import logging
 from typing import Awaitable, Callable
 
-from app.commands import Command
+from app.commands import Command, ReplconfCommand
 from app.resp.decoder import RESPDecoder
 from app.resp.encoder import RESPEncoder
 
@@ -17,6 +17,8 @@ class ReplicationManager:
         self.master_host = master_host
         self.master_port = master_port
         self.slave_port = slave_port
+
+        self.offset = -1
 
         self.reader: asyncio.StreamReader
         self.writer: asyncio.StreamWriter
@@ -65,10 +67,10 @@ class ReplicationManager:
 
         # Attempt PSYNC
         run_id = "?"
-        offset = "-1"
 
-        self.writer.write(RESPEncoder.encode_array("PSYNC", run_id, offset))
+        self.writer.write(RESPEncoder.encode_array("PSYNC", run_id, str(self.offset)))
         await self.writer.drain()
+        self.offset += 1
 
         # Read the response to the PSYNC command
         response_line = await self.reader.readline()
@@ -97,16 +99,18 @@ class ReplicationManager:
                 decoded_commands = RESPDecoder.decode(data)
                 for decoded_command in decoded_commands:
                     command = await parse_command_fn(decoded_command)
+
+                    if isinstance(command, ReplconfCommand):
+                        self.writer.write(
+                            RESPEncoder.encode_array(
+                                "REPLCONF", "ACK", str(self.offset)
+                            )
+                        )
+                        await self.writer.drain()
+
                     await command.execute()
 
-                    # match normalized_command:
-                    #     case ["set", *args]:
-                    #         key, value = args[0], args[1]
-                    #         expiry_ms = int(args[3]) if len(args) > 3 else None
-                    #         await self.replica_storage.set(key, value, expiry_ms)
-                    #     case ["replconf", "getack", "*"]:
-                    #         response = RESPEncoder.encode_array("REPLCONF", "ACK", "0")
-                    #         self.writer.write(response)
+                    self.offset += len(RESPEncoder.encode_array(*decoded_command))
 
         except Exception as e:
             logging.error(f"Replication error: {e}")
