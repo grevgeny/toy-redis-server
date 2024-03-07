@@ -3,7 +3,6 @@ from dataclasses import dataclass
 
 from app.rdb.helpers import get_empty_rdb
 from app.redis_config import RedisConfig
-from app.resp.decoder import RESPDecoder
 from app.resp.encoder import RESPEncoder
 from app.storage import Storage
 
@@ -129,7 +128,7 @@ class InfoCommand(Command):
         if not self.args or self.args[0] != "replication":
             return b"-ERR wrong arguments for 'info' command provided\r\n"
 
-        role = "role:master" if not self.config.master_host else "role:slave"
+        role = f"role:{self.config.role.value}"
         master_replid = f"master_replid:{self.config.master_replid}"
         master_repl_offset = f"master_repl_offset:{self.config.master_repl_offset}"
 
@@ -166,59 +165,36 @@ class CommandUnknown(Command):
         return f"-ERR unknown command {self.name}".encode()
 
 
-class CommandHandler:
-    def __init__(
-        self,
-        storage: Storage,
-        config: RedisConfig,
-    ) -> None:
-        self.storage = storage
-        self.config = config
+async def parse_command(
+    storage: Storage,
+    config: RedisConfig,
+    raw_command: list[str],
+) -> Command:
+    if not raw_command:
+        return CommandUnknown(name="")
 
-    async def handle_command(
-        self,
-        raw_command: bytes,
-    ) -> bytes:
-        if not raw_command:
-            return b"-ERR no command provided\r\n"
+    normalized_command = [raw_command[0].lower(), *raw_command[1:]]
 
-        decoded_command = RESPDecoder.decode(raw_command)[0]
-        command = await self.create_command(decoded_command)
-
-        # if isinstance(command, SetCommand) and self.config.role == Role.MASTER:
-        #     self.storage.add_command_to_queue(raw_command)
-
-        # if isinstance(command, PsyncCommand) and writer:
-        #     self.storage.replicas[writer.get_extra_info("peername")] = writer
-
-        return await command.execute()
-
-    async def create_command(self, raw_command: list[str]) -> Command:
-        if not raw_command:  # Early return if raw_command is empty
-            return CommandUnknown(name="")
-
-        normalized_command = [raw_command[0].lower(), *raw_command[1:]]
-
-        match normalized_command:
-            case ["ping"]:
-                return PingCommand()
-            case ["echo", *args]:
-                return EchoCommand(args)
-            case ["set", *args]:
-                return SetCommand(self.storage, args)
-            case ["get", *args]:
-                return GetCommand(self.storage, args)
-            case ["del", *args]:
-                return DeleteCommand(self.storage, args)
-            case ["config", *args]:
-                return ConfigCommand(self.config, args)
-            case ["keys", arg]:
-                return KeysCommand(self.storage, arg)
-            case ["info", *args]:
-                return InfoCommand(self.config, args)
-            case ["replconf", *args]:
-                return ReplconfCommand()
-            case ["psync", *args]:
-                return PsyncCommand(self.config)
-            case _:
-                return CommandUnknown(name=raw_command[0])
+    match normalized_command:
+        case ["ping"]:
+            return PingCommand()
+        case ["echo", *args]:
+            return EchoCommand(args)
+        case ["set", *args]:
+            return SetCommand(storage, args)
+        case ["get", *args]:
+            return GetCommand(storage, args)
+        case ["del", *args]:
+            return DeleteCommand(storage, args)
+        case ["config", *args]:
+            return ConfigCommand(config, args)
+        case ["keys", arg]:
+            return KeysCommand(storage, arg)
+        case ["info", *args]:
+            return InfoCommand(config, args)
+        case ["replconf", *args]:
+            return ReplconfCommand()
+        case ["psync", *args]:
+            return PsyncCommand(config)
+        case _:
+            return CommandUnknown(name=raw_command[0])
