@@ -1,11 +1,11 @@
 import secrets
 from dataclasses import dataclass, field
-from enum import Enum, auto
+from enum import Enum
 
 
 class Role(Enum):
-    MASTER = auto()
-    SLAVE = auto()
+    MASTER = "master"
+    REPLICA = "slave"
 
 
 @dataclass
