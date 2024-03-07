@@ -112,34 +112,22 @@ class MasterServer(Server):
 
 
 class ReplicaServer(Server):
-    def __init__(
-        self,
-        host: str,
-        port: int,
-        parse_command_fn: ParseCommandFn,
-        replication_manager: ReplicationManager,
-    ) -> None:
-        super().__init__(host, port, parse_command_fn)
-        self.replication_manager = replication_manager
-
     @classmethod
     async def from_config(cls, config: RedisConfig) -> ReplicaServer:
-        replication_manager = await ReplicationManager.initialize(config)
-
-        if not replication_manager or not replication_manager.is_connected:
-            raise ConnectionError("Replica could not connect to master.")
+        replication_manager = ReplicationManager(
+            config.master_host,  # type: ignore
+            config.master_port,  # type: ignore
+            config.port,  # type: ignore
+        )
+        await replication_manager.connect_to_master()
 
         data = data_loading.load_init_data_for_replica(replication_manager.initial_data)
         storage = Storage(data)
 
         parse_command_fn = partial(parse_command, storage, config)
-        replication_manager = replication_manager.set_replica_storage(storage)
+        replication_manager.start_replication_task(parse_command_fn)
 
-        return cls(config.host, config.port, parse_command_fn, replication_manager)
-
-    async def start(self) -> None:
-        asyncio.create_task(self.replication_manager.start_replication())
-        await super().start()
+        return cls(config.host, config.port, parse_command_fn)
 
     async def handle_command(self, data: bytes, writer: asyncio.StreamWriter) -> bytes:
         decoded_command: list[str] = RESPDecoder.decode(data)[0]

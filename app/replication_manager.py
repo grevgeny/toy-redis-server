@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Awaitable, Callable
 
-from app.redis_config import RedisConfig
+from app.commands import Command
 from app.resp.decoder import RESPDecoder
 from app.resp.encoder import RESPEncoder
-from app.storage import Storage
+
+DecodedCommand = list[str]
+ParseCommandFn = Callable[[DecodedCommand], Awaitable[Command]]
 
 
 class ReplicationManager:
@@ -15,35 +18,17 @@ class ReplicationManager:
         self.master_port = master_port
         self.slave_port = slave_port
 
-        self.reader: asyncio.StreamReader | None = None
-        self.writer: asyncio.StreamWriter | None = None
+        self.reader: asyncio.StreamReader
+        self.writer: asyncio.StreamWriter
 
-        self.is_connected: bool = False
-        self.initial_data: bytes | None = None
-        self.replica_storage: Storage | None = None
-
-    @classmethod
-    async def initialize(cls, redis_config: RedisConfig) -> ReplicationManager | None:
-        if not (master_host := redis_config.master_host) or not (
-            master_port := redis_config.master_port
-        ):
-            logging.info("Missing Host/Port for Master.")
-            return None
-
-        instance = cls(master_host, master_port, redis_config.port)
-        await instance.connect_to_master()
-        return instance
-
-    async def connect_to_master(self):
+    async def connect_to_master(self) -> None:
         try:
             self.reader, self.writer = await asyncio.open_connection(
                 self.master_host, self.master_port
             )
             await self.perform_handshake()
-            self.is_connected = True
         except Exception as e:
             logging.error(f"Failed to connect to master: {e}")
-            self.is_connected = False
 
     async def perform_handshake(self) -> None:
         if not self.writer or not self.reader:
@@ -98,51 +83,30 @@ class ReplicationManager:
         else:
             logging.error("PSYNC did not result in a FULLRESYNC response.")
 
-    def set_replica_storage(self, storage: Storage) -> ReplicationManager:
-        self.replica_storage = storage
-        return self
+    def start_replication_task(self, parse_command_fn: ParseCommandFn) -> None:
+        self.replication_task = asyncio.create_task(
+            self.start_replication(parse_command_fn)
+        )
 
-    async def start_replication(self) -> None:
-        if (
-            not self.is_connected
-            or not self.replica_storage
-            or not self.reader
-            or not self.writer
-        ):
-            logging.error("ReplicationManager is not properly initialized.")
-            return
-
+    async def start_replication(self, parse_command_fn: ParseCommandFn) -> None:
         try:
             while data := await self.reader.read(1024):
                 if not data:
-                    break
+                    continue
 
                 decoded_commands = RESPDecoder.decode(data)
                 for decoded_command in decoded_commands:
-                    if len(decoded_command) < 2:
-                        continue
+                    command = await parse_command_fn(decoded_command)
+                    await command.execute()
 
-                    normalized_command = [
-                        decoded_command[0].lower(),
-                        *map(
-                            lambda x: x.lower(),
-                            decoded_command[1:],
-                        ),
-                    ]
-
-                    match normalized_command:
-                        case ["set", *args]:
-                            key, value = args[0], args[1]
-                            expiry_ms = int(args[3]) if len(args) > 3 else None
-                            await self.replica_storage.set(key, value, expiry_ms)
-                        case ["replconf", "getack", "*"]:
-                            response = RESPEncoder.encode_array("REPLCONF", "ACK", "0")
-                            self.writer.write(response)
-                        case _:
-                            logging.warning(
-                                f"Unsupported command: {normalized_command}"
-                            )
-                            continue
+                    # match normalized_command:
+                    #     case ["set", *args]:
+                    #         key, value = args[0], args[1]
+                    #         expiry_ms = int(args[3]) if len(args) > 3 else None
+                    #         await self.replica_storage.set(key, value, expiry_ms)
+                    #     case ["replconf", "getack", "*"]:
+                    #         response = RESPEncoder.encode_array("REPLCONF", "ACK", "0")
+                    #         self.writer.write(response)
 
         except Exception as e:
             logging.error(f"Replication error: {e}")
