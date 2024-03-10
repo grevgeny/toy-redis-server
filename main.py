@@ -2,11 +2,11 @@ import argparse
 import asyncio
 import logging
 
-from app.redis_config import RedisConfig, Role
-from app.server import MasterServer, ReplicaServer
+from app.server.master import MasterServer
+from app.server.replica import ReplicaServer
 
 
-def parse_args() -> RedisConfig:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--host", type=str, default="127.0.0.1", help="The host address to bind"
@@ -17,24 +17,10 @@ def parse_args() -> RedisConfig:
     )
     parser.add_argument("--dbfilename", type=str, help="The name of the RDB file")
     parser.add_argument(
-        "--replicaof",
-        nargs=2,
-        metavar=("MASTER_HOST", "MASTER_PORT"),
-        help="Master host and master port for the replica.",
+        "--replicaof", nargs=2, help="Master host and master port for the replica."
     )
-    args = parser.parse_args()
-    master_host, master_port = args.replicaof if args.replicaof else (None, None)
-    role = Role.REPLICA if master_host else Role.MASTER
 
-    return RedisConfig(
-        host=args.host,
-        port=args.port,
-        role=role,
-        rdb_dir=args.dir,
-        rdb_filename=args.dbfilename,
-        master_host=master_host,
-        master_port=int(master_port) if master_port else None,
-    )
+    return parser.parse_args()
 
 
 async def main() -> None:
@@ -44,14 +30,22 @@ async def main() -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    config = parse_args()
+    args = parse_args()
 
-    if config.role == Role.MASTER:
-        logging.info("Starting as master")
-        server = await MasterServer.from_config(config)
+    if args.replicaof:
+        server = ReplicaServer(
+            host=args.host,
+            port=args.port,
+            master_host=args.replicaof[0],
+            master_port=args.replicaof[1],
+        )
     else:
-        logging.info("Starting as replica")
-        server = await ReplicaServer.from_config(config)
+        server = MasterServer(
+            host=args.host,
+            port=args.port,
+            dir=args.dir,
+            filename=args.dbfilename,
+        )
 
     await server.start()
 
