@@ -52,12 +52,12 @@ class MasterServer:
         self.replica_acked_event = asyncio.Event()
         self.latest_up_to_date_replicas = 0
 
-        server = await asyncio.start_server(
+        self.server = await asyncio.start_server(
             self.handle_connection, self.host, self.port
         )
 
-        async with server:
-            await server.serve_forever()
+        async with self.server:
+            await self.server.serve_forever()
 
     async def handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -225,3 +225,27 @@ class MasterServer:
                 response = b"-ERR unknown command\r\n"
 
         return response
+
+    async def stop(self) -> None:
+        self.server.close()
+        await self.server.wait_closed()
+
+        self.command_propagation_task.cancel()
+
+        try:
+            await self.command_propagation_task
+        except asyncio.CancelledError:
+            pass
+
+        self.replica_ack_task.cancel()
+
+        try:
+            await self.replica_ack_task
+        except asyncio.CancelledError:
+            pass
+
+        for writer in self.replica_writers.keys():
+            writer.close()
+            await writer.wait_closed()
+
+        self.replica_writers.clear()

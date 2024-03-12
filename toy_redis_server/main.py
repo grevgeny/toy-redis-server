@@ -47,7 +47,10 @@ async def main() -> None:
             filename=args.dbfilename,
         )
 
-    await server.start()
+    try:
+        await server.start()
+    finally:
+        await server.stop()
 
 
 if __name__ == "__main__":

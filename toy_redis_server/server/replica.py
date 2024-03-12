@@ -26,24 +26,24 @@ class ReplicaServer:
         self.offset: int = -1
 
     async def start(self) -> None:
-        reader, writer = await self.connect_to_master()
+        self.master_reader, self.master_writer = await self.connect_to_master()
         data = data_loading.load_init_data_for_replica(
-            await self.perform_handshake(reader, writer)
+            await self.perform_handshake(self.master_reader, self.master_writer)
         )
         self.storage = Storage(data)
 
         self.command_replication_task = asyncio.create_task(
-            self.handle_connection(reader, writer, silent=True)
+            self.handle_connection(self.master_reader, self.master_writer, silent=True)
         )
 
-        server = await asyncio.start_server(
+        self.server = await asyncio.start_server(
             lambda r, w: self.handle_connection(r, w, silent=False),
             self.host,
             self.port,
         )
 
-        async with server:
-            await server.serve_forever()
+        async with self.server:
+            await self.server.serve_forever()
 
     async def connect_to_master(
         self,
@@ -155,3 +155,17 @@ class ReplicaServer:
             await writer.drain()
 
         self.offset += len(RESPEncoder.encode_array(*command))
+
+    async def stop(self) -> None:
+        self.master_writer.close()
+        await self.master_writer.wait_closed()
+
+        self.server.close()
+        await self.server.wait_closed()
+
+        self.command_replication_task.cancel()
+
+        try:
+            await self.command_replication_task
+        except asyncio.CancelledError:
+            pass
