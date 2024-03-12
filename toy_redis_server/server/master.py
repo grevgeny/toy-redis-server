@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import secrets
 from typing import NoReturn
 
-from app.rdb import data_loading
-from app.rdb.helpers import get_empty_rdb
-from app.resp.decoder import RESPDecoder
-from app.resp.encoder import RESPEncoder
-from app.server import handlers
-from app.server.server import Role
-from app.storage import Storage
+from toy_redis_server.rdb import data_loading
+from toy_redis_server.resp.decoder import RESPDecoder
+from toy_redis_server.resp.encoder import RESPEncoder
+from toy_redis_server.server import handlers
+from toy_redis_server.server.server import Role
+from toy_redis_server.storage import Storage
+
+EMPTY_RDS_BASE64 = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
+
+
+def get_empty_rdb() -> bytes:
+    return base64.b64decode(EMPTY_RDS_BASE64)
 
 
 class MasterServer:

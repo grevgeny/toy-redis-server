@@ -23,22 +23,16 @@ class LengthEncoding:
 
 
 class StringEncoding:
-    """Special encodings for string objects stored in RDB files."""
-
     INT8 = 0
     INT16 = 1
     INT32 = 2
 
 
 class Type:
-    """Object types in RDB files. Maps memory storage types to RDB types."""
-
     STRING = 0
 
 
 class OpCode:
-    """Special opcodes used in RDB files for various metadata and control purposes."""
-
     AUX = 250
     RESIZEDB = 251
     EXPIRETIME_MS = 252

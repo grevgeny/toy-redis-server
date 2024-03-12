@@ -2,8 +2,8 @@ import argparse
 import asyncio
 import logging
 
-from app.server.master import MasterServer
-from app.server.replica import ReplicaServer
+from toy_redis_server.server.master import MasterServer
+from toy_redis_server.server.replica import ReplicaServer
 
 
 def parse_args() -> argparse.Namespace:

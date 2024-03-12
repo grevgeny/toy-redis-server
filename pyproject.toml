@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "toy-redis-server"
+version = "0.1.0"
+description = ""
+authors = ["Evgeny Grigorenko <eu.grigorenko@gmail.com>"]
+packages = [{include = "toy_redis_server"}]
+
+[tool.poetry.dependencies]
+python = "~3.11"
+
+[tool.poetry.group.dev.dependencies]
+vulture = "^2.11"
+deptry = "^0.12.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

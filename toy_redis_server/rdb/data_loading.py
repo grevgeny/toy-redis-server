@@ -1,7 +1,7 @@
 import datetime
 import os
 
-from app.rdb.parser import RDBParser
+from toy_redis_server.rdb.parser import RDBParser
 
 Data = dict[str, tuple[str, datetime.datetime | None]]
 

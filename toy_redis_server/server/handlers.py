@@ -1,5 +1,5 @@
-from app.resp.encoder import RESPEncoder
-from app.storage import Storage
+from toy_redis_server.resp.encoder import RESPEncoder
+from toy_redis_server.storage import Storage
 
 
 def handle_ping() -> bytes:
