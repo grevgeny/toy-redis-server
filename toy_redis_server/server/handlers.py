@@ -35,3 +35,10 @@ async def handle_keys(storage: Storage, arg: str) -> bytes:
 
     keys = await storage.keys()
     return RESPEncoder.encode_array(*keys)
+
+
+async def handle_type(storage: Storage, key: str) -> bytes:
+    if await storage.get(key):
+        return RESPEncoder.encode_simple_string("string")
+
+    return RESPEncoder.encode_simple_string("none")

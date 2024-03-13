@@ -221,6 +221,9 @@ class MasterServer:
 
                 response = RESPEncoder.encode_integer(self.latest_up_to_date_replicas)
 
+            case ["type", key]:
+                response = await handlers.handle_type(self.storage, key)
+
             case _:
                 response = b"-ERR unknown command\r\n"
 
