@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import logging
 from typing import Any
 
 from toy_redis_server.data_types import Data, Stream, StreamEntry, String
@@ -33,11 +32,10 @@ class Storage:
         stream = self.data.setdefault(stream_key, Stream(stream_key, []))
         entries = stream.entries if isinstance(stream, Stream) else []
         entries.append(StreamEntry(stream_entry_id, stream_entry))
-        # self.data[stream_key] = stream
+        self.data[stream_key] = stream
 
     async def get(self, key: str) -> String | Stream | None:
         entry = self.data.get(key, None)
-        logging.info(f"Get for key {key}: {entry}")
         if entry is None:
             return None
 
