@@ -1,3 +1,5 @@
+import logging
+
 from toy_redis_server.resp.encoder import RESPEncoder
 from toy_redis_server.storage import Storage
 
@@ -38,7 +40,15 @@ async def handle_keys(storage: Storage, arg: str) -> bytes:
 
 
 async def handle_type(storage: Storage, key: str) -> bytes:
-    if await storage.get(key):
-        return RESPEncoder.encode_simple_string("string")
+    TYPE_MAPPING = {
+        "str": "string",
+        None: "none",
+    }
 
-    return RESPEncoder.encode_simple_string("none")
+    value = await storage.get(key)
+    redis_type = TYPE_MAPPING.get(value, "unknown")
+
+    if redis_type == "unknown":
+        logging.info(f"Unknown type for key {key}: {value}")
+
+    return RESPEncoder.encode_simple_string(redis_type)
