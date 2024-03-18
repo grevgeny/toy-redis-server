@@ -9,7 +9,7 @@ from toy_redis_server.rdb import data_loading
 from toy_redis_server.resp.decoder import RESPDecoder
 from toy_redis_server.resp.encoder import RESPEncoder
 from toy_redis_server.server import handlers
-from toy_redis_server.server.server import Role
+from toy_redis_server.server.role import Role
 from toy_redis_server.storage import Storage
 
 
