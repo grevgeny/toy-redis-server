@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import logging
 from typing import Any
+
+from toy_redis_server.data_types import Data, Stream, StreamEntry, String
 
 
 class Storage:
     def __init__(
         self,
-        data: dict[str, tuple[str, datetime.datetime | None]],
+        data: Data,
     ) -> None:
         self.data = data
         self.cleanup_task = asyncio.create_task(self.expire_keys(interval=60))
@@ -22,14 +25,28 @@ class Storage:
             if expiry_ms
             else None
         )
-        self.data[key] = (value, expiry)
+        self.data[key] = String(key, value, expiry)
 
-    async def get(self, key: str) -> str | None:
-        value, expiry = self.data.get(key, (None, None))
-        if expiry and expiry < datetime.datetime.now(datetime.UTC):
-            await self.delete(key)
+    async def xadd(
+        self, stream_key: str, stream_entry_id: str, stream_entry: dict[str, str]
+    ) -> None:
+        stream = self.data.setdefault(stream_key, Stream(stream_key, []))
+        entries = stream.entries if isinstance(stream, Stream) else []
+        entries.append(StreamEntry(stream_entry_id, stream_entry))
+        # self.data[stream_key] = stream
+
+    async def get(self, key: str) -> String | Stream | None:
+        entry = self.data.get(key, None)
+        logging.info(f"Get for key {key}: {entry}")
+        if entry is None:
             return None
-        return value
+
+        if isinstance(entry, String):
+            if entry.expiry and entry.expiry < datetime.datetime.now(datetime.UTC):
+                await self.delete(key)
+                return None
+
+        return entry
 
     async def delete(self, key: str) -> int:
         if key in self.data:
@@ -43,9 +60,12 @@ class Storage:
     async def expire_keys(self, interval: int) -> None:
         while True:
             await asyncio.sleep(interval)
+
             now = datetime.datetime.now(datetime.UTC)
             keys_to_expire = [
-                key for key, (_, expiry) in self.data.items() if expiry and expiry < now
+                key
+                for key, entry in self.data.items()
+                if entry.expiry and entry.expiry < now
             ]
             for key in keys_to_expire:
                 await self.delete(key)

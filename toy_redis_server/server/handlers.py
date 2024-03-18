@@ -1,5 +1,4 @@
-import logging
-
+from toy_redis_server.data_types import String
 from toy_redis_server.resp.encoder import RESPEncoder
 from toy_redis_server.storage import Storage
 
@@ -20,8 +19,8 @@ async def handle_set(
 
 
 async def handle_get(storage: Storage, key: str) -> bytes:
-    if value := await storage.get(key):
-        return RESPEncoder.encode_bulk_string(value)
+    if (entry := await storage.get(key)) and isinstance(entry, String):
+        return RESPEncoder.encode_bulk_string(entry.value)
 
     return RESPEncoder.encode_null()
 
@@ -40,15 +39,16 @@ async def handle_keys(storage: Storage, arg: str) -> bytes:
 
 
 async def handle_type(storage: Storage, key: str) -> bytes:
-    TYPE_MAPPING = {
-        "str": "string",
-        None: "none",
-    }
+    entry = await storage.get(key)
 
-    value = await storage.get(key)
-    redis_type = TYPE_MAPPING.get(value, "unknown")
+    if not entry:
+        return RESPEncoder.encode_bulk_string("none")
 
-    if redis_type == "unknown":
-        logging.info(f"Unknown type for key {key}: {value}")
+    return RESPEncoder.encode_bulk_string(str(type(entry)))
 
-    return RESPEncoder.encode_simple_string(redis_type)
+
+async def handle_xadd(
+    storage: Storage, stream_key: str, stream_entry_id: str, values: list[str]
+) -> None:
+    stream_entry = dict(zip(values[::2], values[1::2]))
+    await storage.xadd(stream_key, stream_entry_id, stream_entry)

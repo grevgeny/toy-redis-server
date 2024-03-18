@@ -1,8 +1,9 @@
 import datetime
 import io
 import struct
-from typing import Any, BinaryIO
+from typing import BinaryIO
 
+from toy_redis_server.data_types import Data, String
 from toy_redis_server.rdb.constants import (
     DataType,
     LengthEncoding,
@@ -10,8 +11,6 @@ from toy_redis_server.rdb.constants import (
     StringEncoding,
     Type,
 )
-
-Data = dict[str, tuple[str, datetime.datetime | None]]
 
 FORMAT_MAPPING = {
     DataType.SIGNED_CHAR: "b",
@@ -49,9 +48,7 @@ class RDBParser:
         self._expiry_dt: datetime.datetime | None = None
 
     @classmethod
-    def load_from_file(
-        cls, filepath: str
-    ) -> dict[str, tuple[str, datetime.datetime | None]]:
+    def load_from_file(cls, filepath: str) -> Data:
         with open(filepath, "rb") as file:
             parser = cls()
             parser.parse(file)
@@ -59,9 +56,7 @@ class RDBParser:
         return parser.data
 
     @classmethod
-    def load_from_bytes(
-        cls, data: bytes
-    ) -> dict[str, tuple[str, datetime.datetime | None]]:
+    def load_from_bytes(cls, data: bytes) -> Data:
         with io.BytesIO(data) as data_stream:
             parser = cls()
             parser.parse(data_stream)
@@ -109,9 +104,9 @@ class RDBParser:
                 self._expiry_dt = expiry_dt
 
             case value_type:
-                key, value = self.parse_key_value(file, value_type)
-                self.data[key.decode()] = (value.decode(), self._expiry_dt)
-                self._expiry_dt = None
+                entry = self.parse_key_value(file, value_type)
+                entry.expiry, self._expiry_dt = self._expiry_dt, None
+                self.data[entry.key] = entry
 
     def parse_length_with_encoding(self, file: BinaryIO) -> tuple[int, bool]:
         length: int
@@ -169,15 +164,23 @@ class RDBParser:
         timestamp = unpack_data(file, DataType.UNSIGNED_LONG)
         return datetime.datetime.fromtimestamp(timestamp / 1000.0, tz=datetime.UTC)
 
-    def parse_key_value(self, file: BinaryIO, value_type: int) -> tuple[Any, Any]:
+    def parse_key_value(self, file: BinaryIO, value_type: int) -> String:
         key = self.parse_string(file)
+
+        if isinstance(key, bytes):
+            decoded_key = key.decode()
+        else:
+            decoded_key = str(key)
 
         match value_type:
             case Type.STRING:
                 value = self.parse_string(file)
+                if isinstance(value, bytes):
+                    decoded_value = value.decode()
+                else:
+                    decoded_value = str(value)
+                return String(decoded_key, decoded_value)
             case _:
                 raise NotImplementedError(
                     f"Value type {value_type} parsing is not implemented."
                 )
-
-        return key, value

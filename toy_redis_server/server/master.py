@@ -225,6 +225,14 @@ class MasterServer:
             case ["type", key]:
                 response = await handlers.handle_type(self.storage, key)
 
+            case ["xadd", stream_key, *args]:
+                entry_id = args[0] if len(args) % 2 != 0 else "random_id"
+                values = args[1:]
+
+                await handlers.handle_xadd(self.storage, stream_key, entry_id, values)
+
+                return RESPEncoder.encode_bulk_string(entry_id) if entry_id else None
+
             case _:
                 response = b"-ERR unknown command\r\n"
 

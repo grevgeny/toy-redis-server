@@ -1,9 +1,7 @@
-import datetime
 import os
 
+from toy_redis_server.data_types import Data
 from toy_redis_server.rdb.parser import RDBParser
-
-Data = dict[str, tuple[str, datetime.datetime | None]]
 
 
 def load_init_data_for_master(rdb_dir: str | None, rdb_filename: str | None) -> Data:
