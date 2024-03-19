@@ -22,3 +22,7 @@ class RESPEncoder:
         encoded_array = f"*{array_length}\r\n{''.join(encoded_elements)}".encode()
 
         return encoded_array
+
+    @staticmethod
+    def encode_error(error: str) -> bytes:
+        return f"-ERR {error}\r\n".encode()
