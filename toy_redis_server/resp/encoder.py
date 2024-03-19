@@ -1,3 +1,6 @@
+from typing import Any
+
+
 class RESPEncoder:
     @staticmethod
     def encode_simple_string(data: str) -> bytes:
@@ -16,10 +19,14 @@ class RESPEncoder:
         return b"$-1\r\n"
 
     @staticmethod
-    def encode_array(*elements: str) -> bytes:
-        encoded_elements = [f"${len(element)}\r\n{element}\r\n" for element in elements]
-        array_length = len(elements)
-        encoded_array = f"*{array_length}\r\n{''.join(encoded_elements)}".encode()
+    def encode_array(*elements: str | list[Any]) -> bytes:
+        encoded_array = f"*{len(elements)}\r\n".encode()
+
+        for element in elements:
+            if isinstance(element, list):
+                encoded_array += RESPEncoder.encode_array(*element)
+            else:
+                encoded_array += RESPEncoder.encode_bulk_string(element)
 
         return encoded_array
 

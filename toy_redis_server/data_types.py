@@ -25,11 +25,24 @@ class Stream(metaclass=RedisType):
     entries: list[StreamEntry]
     expiry: datetime.datetime | None = None
 
+    def __getitem__(self, key: str | slice) -> list[list[str | list[str]]]:
+        if isinstance(key, slice):
+            start = key.start
+            end = key.stop
+
+            return [entry.dump() for entry in self.entries if start <= entry.key <= end]
+
+        else:
+            return [entry.dump() for entry in self.entries if entry.key == key]
+
 
 @dataclass
 class StreamEntry:
     key: str
     entry: dict[str, str]
+
+    def dump(self) -> list[str | list[str]]:
+        return [self.key, [item for pair in self.entry.items() for item in pair]]
 
 
 Data = dict[str, String | Stream]

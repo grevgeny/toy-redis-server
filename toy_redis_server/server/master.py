@@ -228,6 +228,11 @@ class MasterServer:
             case ["xadd", stream_key, *args]:
                 response = await handlers.handle_xadd(self.storage, stream_key, *args)
 
+            case ["xrange", stream_key, start, end]:
+                response = await handlers.handle_xrange(
+                    self.storage, stream_key, start, end
+                )
+
             case _:
                 response = b"-ERR unknown command\r\n"
 

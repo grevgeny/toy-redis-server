@@ -66,6 +66,25 @@ async def handle_xadd(storage: Storage, stream_key: str, *args: str) -> bytes | 
     return RESPEncoder.encode_bulk_string(stream_entry_id)
 
 
+async def handle_xrange(
+    storage: Storage, stream_key: str, start: str, end: str
+) -> bytes:
+    stream = cast(Stream | None, storage.data.get(stream_key))
+
+    if not stream:
+        return RESPEncoder.encode_null()
+
+    if "-" not in start:
+        start = f"{start}-0"
+
+    if "-" not in end:
+        end = f"{end}-{len(stream.entries) - 1}"
+
+    found_entries = stream[start:end]
+
+    return RESPEncoder.encode_array(*found_entries)
+
+
 def process_stream_entry_id(
     stream_key: str, stream_entry_key: str, storage: Storage
 ) -> str:
