@@ -1,3 +1,4 @@
+import time
 from typing import cast
 
 from toy_redis_server.data_types import Stream, String
@@ -66,40 +67,53 @@ async def handle_xadd(storage: Storage, stream_key: str, *args: str) -> bytes | 
 
 
 def process_stream_entry_id(
-    stream_key: str, stream_entry_id: str, storage: Storage
+    stream_key: str, stream_entry_key: str, storage: Storage
 ) -> str:
-    if stream_entry_id == "0-0":
+    if stream_entry_key == "0-0":
         raise ValueError("The ID specified in XADD must be greater than 0-0")
 
+    last_ms_time, last_seq_num = get_last_stream_entry_key(stream_key, storage)
+
+    if "*" in stream_entry_key:
+        return calculate_next_stream_entry_id(
+            stream_entry_key, last_ms_time, last_seq_num
+        )
+    else:
+        validate_stream_entry_key(stream_entry_key, last_ms_time, last_seq_num)
+        return stream_entry_key
+
+
+def get_last_stream_entry_key(stream_key: str, storage: Storage) -> tuple[int, int]:
     stream = cast(Stream | None, storage.data.get(stream_key))
 
-    if stream and "*" not in stream_entry_id:
-        last_entry_id = stream.entries[-1].key
-        validate_stream_entry_id(stream_entry_id, last_entry_id)
+    if stream:
+        last_entry = stream.entries[-1]
+        ms_time, seq_num = last_entry.key.split("-")
+        return int(ms_time), int(seq_num)
+    else:
+        return 0, 0
 
-    return calculate_next_stream_entry_id(stream_entry_id, stream)
 
-
-def validate_stream_entry_id(proposed_id: str, last_id: str) -> None:
+def validate_stream_entry_key(
+    proposed_id: str, last_ms_time: int, last_seq_num: int
+) -> None:
     proposed_ms, proposed_seq = map(int, proposed_id.split("-"))
-    last_ms, last_seq = map(int, last_id.split("-"))
-
-    if proposed_ms < last_ms or (proposed_ms == last_ms and proposed_seq <= last_seq):
+    if proposed_ms < last_ms_time or (
+        proposed_ms == last_ms_time and proposed_seq <= last_seq_num
+    ):
         raise ValueError(
             "The ID specified in XADD is equal or smaller than the target stream top item"
         )
 
 
-def calculate_next_stream_entry_id(proposed_id: str, stream: Stream | None) -> str:
-    ms_time, seq_num = proposed_id.split("-")
-    if seq_num == "*":
-        seq_num = calculate_sequential_number(ms_time, stream)
+def calculate_next_stream_entry_id(
+    stream_entry_key: str, last_ms_time: int, last_seq_num: int
+) -> str:
+    if stream_entry_key == "*":
+        ms_time = round(time.time() * 1000)
+        seq_num = last_seq_num + 1 if ms_time == last_ms_time else 0
+    else:
+        ms_time, _ = stream_entry_key.split("-")
+        seq_num = last_seq_num + 1 if last_ms_time == int(ms_time) else 0
+
     return f"{ms_time}-{seq_num}"
-
-
-def calculate_sequential_number(ms_time: str, stream: Stream | None) -> int:
-    if not stream:
-        return 0 if ms_time != "0" else 1
-    last_entry_id = stream.entries[-1].key
-    last_ms_time, last_seq_num = map(int, last_entry_id.split("-"))
-    return last_seq_num + 1 if ms_time == str(last_ms_time) else 0
