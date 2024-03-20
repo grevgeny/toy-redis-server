@@ -233,8 +233,8 @@ class MasterServer:
                     self.storage, stream_key, start, end
                 )
 
-            case ["xread", "streams", stream_key, start]:
-                response = await handlers.handle_xread(self.storage, stream_key, start)
+            case ["xread", "streams", *args]:
+                response = await handlers.handle_xread(self.storage, *args)
 
             case _:
                 response = b"-ERR unknown command\r\n"

@@ -89,18 +89,26 @@ async def handle_xrange(
     return RESPEncoder.encode_array(*found_entries)
 
 
-async def handle_xread(storage: Storage, stream_key: str, start: str) -> bytes:
-    stream = cast(Stream | None, await storage.get(stream_key))
+async def handle_xread(storage: Storage, *args: str) -> bytes:
+    n_streams = len(args) // 2
+    streams = zip(args[:n_streams], args[n_streams:])
 
-    if not stream:
-        return RESPEncoder.encode_null()
+    stream_responses = []
+    for stream_key, start in streams:
+        stream = cast(Stream | None, await storage.get(stream_key))
 
-    start = f"{start.split('-')[0]}-{int(start.split('-')[1]) + 1}"
-    end = f"{round(time.time() * 1000)}-{len(stream.entries) - 1}"
+        if not stream:
+            stream_responses.append(RESPEncoder.encode_null())
+            continue
 
-    found_entries = stream[start:end]
+        start = f"{start.split('-')[0]}-{int(start.split('-')[1]) + 1}"
+        end = f"{round(time.time() * 1000)}-{len(stream.entries) - 1}"
 
-    return RESPEncoder.encode_array([stream_key, found_entries])
+        found_entries = stream[start:end]
+
+        stream_responses.append([stream_key, found_entries])
+
+    return RESPEncoder.encode_array(*stream_responses)
 
 
 def process_stream_entry_id(
