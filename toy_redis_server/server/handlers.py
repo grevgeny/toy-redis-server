@@ -100,8 +100,12 @@ async def handle_xread(storage: Storage, *args: str) -> bytes:
         if not stream:
             continue
 
-        start = f"{start.split('-')[0]}-{int(start.split('-')[1]) + 1}"
-        end = f"{round(time.time() * 1000)}-{len(stream.entries) - 1}"
+        if start == "$":
+            start = f"{round(time.time() * 1000)}-0"
+            end = f"{round(time.time() * 1000)}-{len(stream.entries) - 1}"
+        else:
+            start = f"{start.split('-')[0]}-{int(start.split('-')[1]) + 1}"
+            end = f"{round(time.time() * 1000)}-{len(stream.entries) - 1}"
 
         found_entries = stream[start:end]
 

@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import secrets
-from typing import NoReturn
+from typing import NoReturn, cast
 
+from toy_redis_server.data_types import Stream
 from toy_redis_server.rdb import data_loading
 from toy_redis_server.resp.decoder import RESPDecoder
 from toy_redis_server.resp.encoder import RESPEncoder
@@ -237,11 +238,19 @@ class MasterServer:
                 response = await handlers.handle_xread(self.storage, *args)
 
             case ["xread", "block", block_ms, "streams", *args]:
+                for i, arg in enumerate(args):
+                    if arg == "$":
+                        stream = cast(
+                            Stream | None, await self.storage.get(args[i - 1])
+                        )
+                        if stream:
+                            args[i] = stream.entries[-1].key
+
                 if block_ms == "0":
                     while True:
                         await asyncio.sleep(0.1)
-                        response = await handlers.handle_xread(self.storage, *args)
 
+                        response = await handlers.handle_xread(self.storage, *args)
                         if response != RESPEncoder.encode_null():
                             break
 
