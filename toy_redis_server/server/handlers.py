@@ -79,7 +79,9 @@ async def handle_xrange(
     elif start == "-":
         start = "0-0"
 
-    if "-" not in end:
+    if end == "+":
+        end = f"{round(time.time() * 1000)}-{len(stream.entries) - 1}"
+    elif "-" not in end:
         end = f"{end}-{len(stream.entries) - 1}"
 
     found_entries = stream[start:end]
