@@ -76,6 +76,8 @@ async def handle_xrange(
 
     if "-" not in start:
         start = f"{start}-0"
+    elif start == "-":
+        start = "0-0"
 
     if "-" not in end:
         end = f"{end}-{len(stream.entries) - 1}"
