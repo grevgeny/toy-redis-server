@@ -21,7 +21,7 @@ class RESPDecoder:
 
         for _ in range(num_elements):
             next_data, rest = RESPDecoder._split_next(rest)
-            elements.append(RESPDecoder.decode(next_data))
+            elements.extend(RESPDecoder.decode(next_data).split())
 
         return elements, *RESPDecoder.decode(rest)
 

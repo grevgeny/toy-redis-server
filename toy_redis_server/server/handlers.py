@@ -69,7 +69,7 @@ async def handle_xadd(storage: Storage, stream_key: str, *args: str) -> bytes | 
 async def handle_xrange(
     storage: Storage, stream_key: str, start: str, end: str
 ) -> bytes:
-    stream = cast(Stream | None, storage.data.get(stream_key))
+    stream = cast(Stream | None, await storage.get(stream_key))
 
     if not stream:
         return RESPEncoder.encode_null()
@@ -87,6 +87,20 @@ async def handle_xrange(
     found_entries = stream[start:end]
 
     return RESPEncoder.encode_array(*found_entries)
+
+
+async def handle_xread(storage: Storage, stream_key: str, start: str) -> bytes:
+    stream = cast(Stream | None, await storage.get(stream_key))
+
+    if not stream:
+        return RESPEncoder.encode_null()
+
+    start = f"{start.split('-')[0]}-{int(start.split('-')[1]) + 1}"
+    end = f"{round(time.time() * 1000)}-{len(stream.entries) - 1}"
+
+    found_entries = stream[start:end]
+
+    return RESPEncoder.encode_array([stream_key, found_entries])
 
 
 def process_stream_entry_id(
@@ -140,3 +154,36 @@ def calculate_next_stream_entry_id(
         seq_num = last_seq_num + 1 if last_ms_time == int(ms_time) else 0
 
     return f"{ms_time}-{seq_num}"
+
+
+"""
+
+*1\r\n
+    *2\r\n
+        $8\r\nsome_key\r\n
+        
+        *1\r\n
+            *2\r\n
+                $3\r\0-1\r\n
+                *2\r\n
+                    $11\r\ntemperature\r\n
+                    $2\r\n37\r\n
+
+                
+        *1\r\n
+            *2\r\n
+                $3\r\n0-1\r\n
+                *2\r\n
+                    $11\r\ntemperature\r\n
+                    $2\r\n46\r\n
+
+    *2\r\n
+        $6\r\norange\r\n
+        *1\r\n
+            *2\r\n
+                $3\r\n0-1\r\n
+                *2\r\n
+                    $11\r\ntemperature\r\n
+                    $2\r\n52\r\n
+
+"""
