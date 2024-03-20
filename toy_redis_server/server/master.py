@@ -236,6 +236,11 @@ class MasterServer:
             case ["xread", "streams", *args]:
                 response = await handlers.handle_xread(self.storage, *args)
 
+            case ["xread", "block", block_ms, "streams", *args]:
+                await asyncio.sleep(int(block_ms) / 1000)
+
+                response = await handlers.handle_xread(self.storage, *args)
+
             case _:
                 response = b"-ERR unknown command\r\n"
 

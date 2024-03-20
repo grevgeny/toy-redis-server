@@ -20,6 +20,9 @@ class RESPEncoder:
 
     @staticmethod
     def encode_array(*elements: str | list[Any]) -> bytes:
+        if not elements:
+            return RESPEncoder.encode_null()
+
         encoded_array = f"*{len(elements)}\r\n".encode()
 
         for element in elements:

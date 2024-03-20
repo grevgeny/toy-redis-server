@@ -98,13 +98,15 @@ async def handle_xread(storage: Storage, *args: str) -> bytes:
         stream = cast(Stream | None, await storage.get(stream_key))
 
         if not stream:
-            stream_responses.append(RESPEncoder.encode_null())
             continue
 
         start = f"{start.split('-')[0]}-{int(start.split('-')[1]) + 1}"
         end = f"{round(time.time() * 1000)}-{len(stream.entries) - 1}"
 
         found_entries = stream[start:end]
+
+        if not found_entries:
+            continue
 
         stream_responses.append([stream_key, found_entries])
 
